@@ -4,6 +4,7 @@ import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Database,
@@ -177,7 +178,9 @@ function Overview({
   const chartData = experiments.map((experiment) => ({
     name: experiment.experiment_name.replace("YOLOv8", "v8"),
     map50: experiment.map50,
-    fps: experiment.fps
+    map50Label: formatNumber(experiment.map50),
+    fps: experiment.fps,
+    fpsLabel: `${formatNumber(experiment.fps, 1)} FPS`
   }));
 
   return (
@@ -220,13 +223,23 @@ function Overview({
         </div>
         {experiments.length ? (
           <div className="chart-frame">
+            <div className="chart-legend" aria-label="Overview chart legend">
+              <span><i className="legend-blue" /> mAP@0.5 detection accuracy</span>
+              <span><i className="legend-black" /> FPS inference speed</span>
+            </div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData}>
                 <CartesianGrid stroke="#d7dce2" vertical={false} />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
+                <YAxis yAxisId="accuracy" tickLine={false} axisLine={false} domain={[0, 1]} />
+                <YAxis yAxisId="speed" orientation="right" tickLine={false} axisLine={false} />
                 <Tooltip />
-                <Bar dataKey="map50" fill="#002FA7" name="mAP@0.5" />
+                <Bar yAxisId="accuracy" dataKey="map50" fill="#002FA7" name="mAP@0.5">
+                  <LabelList dataKey="map50Label" position="top" fontSize={12} fill="#002FA7" />
+                </Bar>
+                <Bar yAxisId="speed" dataKey="fps" fill="#111827" name="FPS">
+                  <LabelList dataKey="fpsLabel" position="top" fontSize={12} fill="#111827" />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -488,7 +501,10 @@ function ExperimentDetailPage({ onImport }: { onImport: () => void }) {
     <section className="content-stack">
       <div className="detail-header">
         <div className="section-heading">
-          <Link className="text-link" to="/experiments">Back to comparison</Link>
+          <Link className="back-button" to="/experiments">
+            <ArrowLeft size={17} aria-hidden="true" />
+            Back to comparison
+          </Link>
           <h2>{experiment.experiment_name}</h2>
           <p>{experiment.method}</p>
         </div>
