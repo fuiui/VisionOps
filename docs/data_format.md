@@ -2,13 +2,19 @@
 
 Phase 1 reads `sample_data/manifest.json`.
 
-Each experiment entry points to a CSV file with this header:
+Each experiment entry points to a CSV file. `epoch` is required. Known columns are used for the core dashboard:
 
 ```csv
 epoch,precision,recall,map50,map5095
 ```
 
-The final row becomes the experiment's metric snapshot. All rows are stored as curve points.
+Additional numeric columns are also accepted. For example:
+
+```csv
+epoch,precision,recall,map50,map5095,box_loss,cls_loss
+```
+
+The final row becomes the experiment's metric snapshot. All numeric columns except `epoch` are exposed as dynamic metrics in the API. Non-numeric columns are ignored for metric charts.
 
 Visual cases are listed in the manifest and reference files under `sample_data/visual_cases/`.
 

@@ -68,7 +68,8 @@ Must show:
 - model group,
 - precision, recall, mAP@0.5, mAP@0.5:0.95, FPS, frame time,
 - best model highlight,
-- metric chart across multiple runs,
+- dynamic metric charts across multiple runs,
+- `View by metric` and `View by model` comparison modes,
 - a link from each row to the single-run detail page,
 - empty and error guidance.
 
@@ -143,6 +144,7 @@ Frontend types:
 - `Experiment`
 - `MetricSnapshot`
 - `MetricCurvePoint`
+- `DynamicMetric`
 - `VisualCase`
 - `InferenceRun`
 - `DemoSummary`
@@ -151,6 +153,7 @@ Frontend types:
 Backend persistence:
 
 - SQLite stores metadata, metric snapshots, curve points, visual case paths, and inference run records.
+- SQLite stores dynamic final metric values parsed from numeric `results.csv` columns.
 - SQLite must not store large datasets, model weights, or private absolute paths intended for GitHub.
 
 ## API

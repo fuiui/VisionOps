@@ -289,6 +289,38 @@ h2 {
   min-height: 280px;
 }
 
+.comparison-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.segmented-control {
+  border: 1px solid #111827;
+  display: inline-flex;
+  min-width: max-content;
+}
+
+.segmented-control button {
+  min-height: 38px;
+  border: 0;
+  border-right: 1px solid #111827;
+  background: #ffffff;
+  color: #111827;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.active {
+  background: #111827;
+  color: #ffffff;
+}
+
 .comparison-summary,
 .metric-strip {
   display: grid;
@@ -298,6 +330,42 @@ h2 {
 
 .metric-strip {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.metric-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.metric-chart-card,
+.model-chart-card {
+  border: 1px solid #d7dce2;
+  padding: 16px;
+  min-width: 0;
+}
+
+.metric-chart-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metric-chart-title span,
+.metric-chart-card small {
+  color: #4b5563;
+}
+
+.model-chart-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.model-chart-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .table-wrap {
@@ -474,6 +542,10 @@ dd {
 
   .topbar {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .comparison-heading {
     flex-direction: column;
   }
 

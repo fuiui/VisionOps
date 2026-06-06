@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,67 @@ from typing import Any
 from .database import Database
 
 
+METRIC_METADATA = {
+    "precision": {"label": "Precision", "unit": "", "direction": "higher", "group": "accuracy"},
+    "recall": {"label": "Recall", "unit": "", "direction": "higher", "group": "accuracy"},
+    "map50": {"label": "mAP@0.5", "unit": "", "direction": "higher", "group": "accuracy"},
+    "map5095": {"label": "mAP@0.5:0.95", "unit": "", "direction": "higher", "group": "accuracy"},
+    "fps": {"label": "FPS", "unit": "fps", "direction": "higher", "group": "speed"},
+    "frame_time_ms": {"label": "Frame time", "unit": "ms", "direction": "lower", "group": "speed"},
+}
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def metric_key(raw_name: str) -> str:
+    normalized = raw_name.strip().lower()
+    normalized = normalized.replace("map@0.5", "map50").replace("map50-95", "map5095")
+    normalized = normalized.replace("map@0.5:0.95", "map5095")
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+    return normalized
+
+
+def metric_label(key: str) -> str:
+    if key in METRIC_METADATA:
+        return METRIC_METADATA[key]["label"]
+    return key.replace("_", " ").title()
+
+
+def metric_unit(key: str) -> str:
+    return METRIC_METADATA.get(key, {}).get("unit", "")
+
+
+def metric_direction(key: str) -> str:
+    if key in METRIC_METADATA:
+        return METRIC_METADATA[key]["direction"]
+    return "lower" if "loss" in key or "error" in key or key.endswith("_ms") else "higher"
+
+
+def metric_group(key: str) -> str:
+    if key in METRIC_METADATA:
+        return METRIC_METADATA[key]["group"]
+    if "loss" in key or "error" in key:
+        return "loss"
+    if "fps" in key or key.endswith("_ms") or "time" in key or "latency" in key:
+        return "speed"
+    if "map" in key or "precision" in key or "recall" in key or "acc" in key:
+        return "accuracy"
+    return "other"
+
+
+def read_numeric_metrics(row: dict[str, str]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for raw_key, raw_value in row.items():
+        key = metric_key(raw_key)
+        if key == "epoch" or raw_value is None or raw_value == "":
+            continue
+        try:
+            metrics[key] = float(raw_value)
+        except ValueError:
+            continue
+    return metrics
 
 
 def read_curve(csv_path: Path) -> list[dict[str, float | int]]:
@@ -18,15 +78,9 @@ def read_curve(csv_path: Path) -> list[dict[str, float | int]]:
     with csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            points.append(
-                {
-                    "epoch": int(row["epoch"]),
-                    "precision": float(row["precision"]),
-                    "recall": float(row["recall"]),
-                    "map50": float(row["map50"]),
-                    "map5095": float(row["map5095"]),
-                }
-            )
+            point = {"epoch": int(row["epoch"])}
+            point.update(read_numeric_metrics(row))
+            points.append(point)
     if not points:
         raise ValueError(f"No metric rows found in {csv_path}")
     return points
@@ -42,6 +96,7 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
 
     with database.connect() as connection:
         connection.execute("DELETE FROM visual_cases")
+        connection.execute("DELETE FROM metric_values")
         connection.execute("DELETE FROM metric_points")
         connection.execute("DELETE FROM metrics")
         connection.execute("DELETE FROM experiments")
@@ -50,6 +105,13 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
             results_csv = sample_data_dir / experiment["results_csv"]
             curve = read_curve(results_csv)
             final_point = curve[-1]
+            final_metrics = {
+                key: float(value)
+                for key, value in final_point.items()
+                if key != "epoch" and isinstance(value, (float, int))
+            }
+            final_metrics["fps"] = float(experiment["fps"])
+            final_metrics["frame_time_ms"] = float(experiment["frame_time_ms"])
 
             connection.execute(
                 """
@@ -110,6 +172,27 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
                     for point in curve
                 ],
             )
+            connection.executemany(
+                """
+                INSERT INTO metric_values (
+                    experiment_id, metric_key, metric_label, metric_value,
+                    metric_unit, metric_direction, metric_group
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        experiment["id"],
+                        key,
+                        metric_label(key),
+                        value,
+                        metric_unit(key),
+                        metric_direction(key),
+                        metric_group(key),
+                    )
+                    for key, value in final_metrics.items()
+                ],
+            )
 
         for visual_case in manifest["visual_cases"]:
             connection.execute(
@@ -139,7 +222,7 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
 
 
 def list_experiments(database: Database) -> list[dict[str, Any]]:
-    return database.query(
+    experiments = database.query(
         """
         SELECT
             e.id, e.experiment_folder, e.experiment_name, e.experiment_group,
@@ -151,6 +234,29 @@ def list_experiments(database: Database) -> list[dict[str, Any]]:
         ORDER BY m.map50 DESC, m.fps DESC
         """
     )
+    attach_metric_values(database, experiments)
+    return experiments
+
+
+def attach_metric_values(database: Database, experiments: list[dict[str, Any]]) -> None:
+    if not experiments:
+        return
+    metric_rows = database.query(
+        """
+        SELECT
+            experiment_id, metric_key AS key, metric_label AS label,
+            metric_value AS value, metric_unit AS unit,
+            metric_direction AS direction, metric_group AS metric_group
+        FROM metric_values
+        ORDER BY id ASC
+        """
+    )
+    by_experiment: dict[str, list[dict[str, Any]]] = {}
+    for row in metric_rows:
+        experiment_id = row.pop("experiment_id")
+        by_experiment.setdefault(experiment_id, []).append(row)
+    for experiment in experiments:
+        experiment["metrics"] = by_experiment.get(experiment["id"], [])
 
 
 def build_experiment_analysis(experiment: dict[str, Any]) -> dict[str, Any]:
@@ -227,6 +333,7 @@ def get_experiment_detail(database: Database, experiment_id: str) -> dict[str, A
         """,
         (experiment_id,),
     )
+    attach_metric_values(database, [experiment])
     experiment["visual_cases"] = list_visual_cases_for_experiment(database, experiment_id)
     experiment["analysis"] = build_experiment_analysis(experiment)
     return experiment

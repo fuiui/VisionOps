@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -78,6 +79,57 @@ def test_experiment_detail_includes_analysis_and_related_visual_cases(tmp_path: 
     assert payload["analysis"]["next_steps"]
     assert payload["analysis"]["tradeoff"]
     assert {item["experiment_id"] for item in payload["visual_cases"]} == {"exp-yolov8s-lowlight"}
+
+
+def test_import_sample_data_returns_dynamic_numeric_metrics(tmp_path: Path) -> None:
+    sample_dir = tmp_path / "sample_data"
+    experiment_dir = sample_dir / "experiments" / "dynamic_run"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "results.csv").write_text(
+        "\n".join(
+            [
+                "epoch,precision,recall,map50,map5095,box_loss,notes",
+                "1,0.40,0.31,0.35,0.18,1.42,warmup",
+                "5,0.62,0.58,0.66,0.39,0.82,final",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (sample_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "experiments": [
+                    {
+                        "id": "exp-dynamic",
+                        "experiment_folder": "experiments/dynamic_run",
+                        "experiment_name": "Dynamic Metrics Run",
+                        "experiment_group": "dynamic",
+                        "method": "Run with an extra metric column.",
+                        "results_csv": "experiments/dynamic_run/results.csv",
+                        "fps": 77.5,
+                        "frame_time_ms": 12.9,
+                        "created_at": "2026-06-01T10:00:00Z",
+                        "notes": "Includes box_loss and a non-numeric notes column.",
+                    }
+                ],
+                "visual_cases": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_app(database_path=tmp_path / "visionops.db", sample_data_dir=sample_dir)
+    client = TestClient(app)
+
+    assert client.post("/api/import/sample").status_code == 200
+    payload = client.get("/api/experiments").json()[0]
+    metric_keys = {metric["key"] for metric in payload["metrics"]}
+
+    assert {"precision", "recall", "map50", "map5095", "box_loss", "fps", "frame_time_ms"} <= metric_keys
+    assert "notes" not in metric_keys
+    box_loss = next(metric for metric in payload["metrics"] if metric["key"] == "box_loss")
+    assert box_loss["value"] == 0.82
+    assert box_loss["direction"] == "lower"
+    assert box_loss["unit"] == ""
 
 
 def test_demo_summary_reports_empty_state_before_import(tmp_path: Path) -> None:

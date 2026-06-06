@@ -22,6 +22,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  LabelList,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -38,7 +40,7 @@ import {
   importSampleData,
   runInference
 } from "./api";
-import type { DemoSummary, Experiment, ExperimentDetail, InferenceResult, PageState, VisualCase } from "./types";
+import type { DemoSummary, DynamicMetric, Experiment, ExperimentDetail, InferenceResult, PageState, VisualCase } from "./types";
 
 function formatNumber(value: number | undefined, digits = 3) {
   return typeof value === "number" ? value.toFixed(digits) : "0.000";
@@ -49,6 +51,27 @@ function pageState(isLoading: boolean, error: string | null, hasData: boolean, s
   if (error) return "error";
   if (success) return "success";
   return hasData ? "normal" : "empty";
+}
+
+const metricOrder = ["map50", "precision", "recall", "map5095", "fps", "frame_time_ms"];
+
+function metricRank(metric: DynamicMetric) {
+  const index = metricOrder.indexOf(metric.key);
+  return index === -1 ? metricOrder.length + 1 : index;
+}
+
+function metricColor(metric: DynamicMetric) {
+  if (metric.metric_group === "loss") return "#E4002B";
+  if (metric.metric_group === "speed") return "#111827";
+  if (metric.metric_group === "accuracy") return "#002FA7";
+  return "#4B5563";
+}
+
+function formatMetricValue(metric: DynamicMetric | undefined) {
+  if (!metric) return "not recorded";
+  const digits = metric.unit === "ms" || metric.unit === "fps" ? 1 : 3;
+  const value = formatNumber(metric.value, digits);
+  return metric.unit ? `${value} ${metric.unit}` : value;
 }
 
 function StatePanel({
@@ -216,14 +239,16 @@ function Overview({
 }
 
 function Experiments({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
+  const [comparisonMode, setComparisonMode] = useState<"metric" | "model">("metric");
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
   const bestAccuracy = rows[0];
   const bestSpeed = [...rows].sort((a, b) => b.fps - a.fps)[0];
-  const comparisonData = rows.map((experiment) => ({
-    name: experiment.experiment_name.replace("YOLOv8", "v8"),
-    map50: experiment.map50,
-    fps: experiment.fps
-  }));
+  const metricDefinitions = rows
+    .flatMap((experiment) => experiment.metrics ?? [])
+    .reduce<DynamicMetric[]>((definitions, metric) => {
+      return definitions.some((item) => item.key === metric.key) ? definitions : [...definitions, metric];
+    }, [])
+    .sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
 
   return (
     <section className="content-stack">
@@ -298,21 +323,105 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
             </table>
           </div>
           <div className="wide-panel">
-            <div className="section-heading">
-              <h2>Accuracy and Speed Tradeoff</h2>
-              <p>mAP@0.5 answers quality; FPS answers throughput. The best choice depends on the review goal.</p>
+            <div className="section-heading comparison-heading">
+              <div>
+                <h2>Dynamic Metric Comparison</h2>
+                <p>VisionOps reads every numeric metric recorded for each model. Different units are separated to avoid misleading axes.</p>
+              </div>
+              <div className="segmented-control" aria-label="Comparison view mode">
+                <button
+                  className={comparisonMode === "metric" ? "active" : ""}
+                  onClick={() => setComparisonMode("metric")}
+                  type="button"
+                >
+                  View by metric
+                </button>
+                <button
+                  className={comparisonMode === "model" ? "active" : ""}
+                  onClick={() => setComparisonMode("model")}
+                  type="button"
+                >
+                  View by model
+                </button>
+              </div>
             </div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={comparisonData}>
-                <CartesianGrid stroke="#d7dce2" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis yAxisId="accuracy" tickLine={false} axisLine={false} />
-                <YAxis yAxisId="speed" orientation="right" tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Bar yAxisId="accuracy" dataKey="map50" fill="#002FA7" name="mAP@0.5" />
-                <Bar yAxisId="speed" dataKey="fps" fill="#111827" name="FPS" />
-              </BarChart>
-            </ResponsiveContainer>
+            {metricDefinitions.length ? (
+              comparisonMode === "metric" ? (
+                <div className="metric-chart-grid">
+                  {metricDefinitions.map((metric) => {
+                    const chartRows = rows.map((experiment) => {
+                      const value = experiment.metrics?.find((item) => item.key === metric.key);
+                      return {
+                        name: experiment.experiment_name.replace("YOLOv8", "v8"),
+                        value: value?.value,
+                        valueLabel: formatMetricValue(value)
+                      };
+                    });
+                    const missing = chartRows.filter((item) => item.value === undefined).length;
+                    return (
+                      <article className="metric-chart-card" key={metric.key}>
+                        <div className="metric-chart-title">
+                          <strong>{metric.label}</strong>
+                          <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
+                        </div>
+                        <ResponsiveContainer width="100%" height={210}>
+                          <BarChart data={chartRows}>
+                            <CartesianGrid stroke="#d7dce2" vertical={false} />
+                            <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                            <YAxis tickLine={false} axisLine={false} />
+                            <Tooltip formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")} />
+                            <Bar dataKey="value" fill={metricColor(metric)} name={metric.label}>
+                              <LabelList dataKey="valueLabel" position="top" fontSize={12} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                        {missing ? <small>{missing} model{missing > 1 ? "s" : ""} not recorded</small> : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="model-chart-stack">
+                  {rows.map((experiment) => {
+                    const metrics = [...(experiment.metrics ?? [])].sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
+                    const maxValue = Math.max(...metrics.map((metric) => Math.abs(metric.value)), 1);
+                    const chartRows = metrics.map((metric) => ({
+                      key: metric.key,
+                      label: metric.label,
+                      normalized: Math.abs(metric.value) / maxValue,
+                      valueLabel: formatMetricValue(metric),
+                      metric
+                    }));
+                    return (
+                      <article className="model-chart-card" key={experiment.id}>
+                        <div className="metric-chart-title">
+                          <strong>{experiment.experiment_name}</strong>
+                          <span>Normalized bars, original values shown</span>
+                        </div>
+                        <div className="model-chart-scroll">
+                          <ResponsiveContainer width={Math.max(620, chartRows.length * 118)} height={220}>
+                            <BarChart data={chartRows}>
+                              <CartesianGrid stroke="#d7dce2" vertical={false} />
+                              <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} />
+                              <YAxis tickLine={false} axisLine={false} domain={[0, 1]} hide />
+                              <Tooltip formatter={(_, __, item) => item.payload.valueLabel} />
+                              <Bar dataKey="normalized" name="Normalized metric">
+                                {chartRows.map((item) => (
+                                  <Cell key={item.key} fill={metricColor(item.metric)} />
+                                ))}
+                                <LabelList dataKey="valueLabel" position="top" fontSize={12} />
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <StatePanel state="empty" title="No dynamic metrics" body="Import sample data again to populate the dynamic metric list." />
+            )}
           </div>
         </>
       )}

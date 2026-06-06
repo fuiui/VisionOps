@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS metric_points (
     FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS metric_values (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id TEXT NOT NULL,
+    metric_key TEXT NOT NULL,
+    metric_label TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    metric_unit TEXT NOT NULL,
+    metric_direction TEXT NOT NULL,
+    metric_group TEXT NOT NULL,
+    FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS visual_cases (
     id TEXT PRIMARY KEY,
     experiment_id TEXT NOT NULL,
@@ -96,4 +108,3 @@ class Database:
     def query_one(self, sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
         rows = self.query(sql, params)
         return rows[0] if rows else None
-

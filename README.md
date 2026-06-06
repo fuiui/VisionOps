@@ -19,7 +19,7 @@ YOLO experiment artifacts often live across scripts, CSV files, image folders, c
 - FastAPI backend with SQLite persistence.
 - React + TypeScript dashboard built around a reviewer-friendly product story.
 - Demo Mode sample import that works without real WildNight data.
-- Experiment comparison table and metric chart.
+- Experiment comparison table with dynamic metric charts parsed from recorded CSV columns.
 - Model run detail page with metrics, curve, related visual cases, and analysis.
 - Failure gallery for visual detection cases.
 - Inference Demo that records uploads and returns a clear deterministic demo result.
@@ -62,7 +62,7 @@ flowchart LR
 
 ## Demo Mode
 
-Demo Mode imports `sample_data/manifest.json`, three synthetic experiment CSV files, and four SVG visual cases. The sample files are intentionally small and do not represent the full WildNight dataset.
+Demo Mode imports `sample_data/manifest.json`, three synthetic experiment CSV files, and four SVG visual cases. The sample files are intentionally small and do not represent the full WildNight dataset. `results.csv` must include `epoch`; any additional numeric columns are exposed as dynamic comparison metrics.
 
 Phase 1 keeps real WildNight import and real YOLO inference out of scope. The backend already exposes the API shape so later phases can replace the demo behavior with real experiment scanning and model execution.
 
@@ -92,8 +92,8 @@ npm run dev
 - `GET /api/demo-summary` returns Demo Mode story metrics for the frontend.
 - `POST /api/import/sample` imports bundled Demo Mode data.
 - `POST /api/import/local` is reserved for Local Research Mode.
-- `GET /api/experiments` returns experiment rows with metrics.
-- `GET /api/experiments/{id}` returns one experiment with curve points, related visual cases, and model analysis.
+- `GET /api/experiments` returns experiment rows with core metrics and dynamic `metrics[]` values.
+- `GET /api/experiments/{id}` returns one experiment with curve points, dynamic metrics, related visual cases, and model analysis.
 - `GET /api/failures` returns visual failure cases.
 - `POST /api/infer` accepts one image and returns a Phase 1 demo detection.
 

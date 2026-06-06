@@ -18,11 +18,11 @@ Reserved for Local Research Mode. Phase 1 returns a not-implemented status.
 
 ## GET /api/experiments
 
-Returns all imported experiments and metric snapshots.
+Returns all imported experiments, core metric snapshots, and dynamic `metrics[]` values parsed from numeric `results.csv` columns.
 
 ## GET /api/experiments/{id}
 
-Returns one experiment plus metric curve points, related visual cases, and a deterministic model analysis summary for the detail page.
+Returns one experiment plus metric curve points, dynamic `metrics[]`, related visual cases, and a deterministic model analysis summary for the detail page.
 
 ## GET /api/failures
 

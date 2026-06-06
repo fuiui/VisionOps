@@ -16,7 +16,17 @@ export type Experiment = {
   fps: number;
   frame_time_ms: number;
   data_source: string;
+  metrics?: DynamicMetric[];
   curve?: MetricPoint[];
+};
+
+export type DynamicMetric = {
+  key: string;
+  label: string;
+  value: number;
+  unit: string;
+  direction: "higher" | "lower";
+  metric_group: "accuracy" | "speed" | "loss" | "other";
 };
 
 export type ModelAnalysis = {
