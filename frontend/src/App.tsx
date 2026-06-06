@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Database,
   FileText,
@@ -31,12 +32,13 @@ import {
 import {
   assetUrl,
   getDemoSummary,
+  getExperiment,
   getExperiments,
   getFailures,
   importSampleData,
   runInference
 } from "./api";
-import type { DemoSummary, Experiment, InferenceResult, PageState, VisualCase } from "./types";
+import type { DemoSummary, Experiment, ExperimentDetail, InferenceResult, PageState, VisualCase } from "./types";
 
 function formatNumber(value: number | undefined, digits = 3) {
   return typeof value === "number" ? value.toFixed(digits) : "0.000";
@@ -215,13 +217,19 @@ function Overview({
 
 function Experiments({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
-  const selected = rows[0];
+  const bestAccuracy = rows[0];
+  const bestSpeed = [...rows].sort((a, b) => b.fps - a.fps)[0];
+  const comparisonData = rows.map((experiment) => ({
+    name: experiment.experiment_name.replace("YOLOv8", "v8"),
+    map50: experiment.map50,
+    fps: experiment.fps
+  }));
 
   return (
     <section className="content-stack">
       <div className="section-heading">
         <h2>Experiment Comparison</h2>
-        <p>Accuracy and speed are shown together so a reviewer can understand the tradeoff quickly.</p>
+        <p>Compare two or more model runs side by side, then open a single run when you need the detailed record.</p>
       </div>
       {!rows.length ? (
         <StatePanel
@@ -231,6 +239,23 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
         />
       ) : (
         <>
+          <div className="comparison-summary">
+            <article className="metric-card">
+              <span>Best accuracy</span>
+              <strong>{formatNumber(bestAccuracy?.map50)}</strong>
+              <small>{bestAccuracy?.experiment_name}</small>
+            </article>
+            <article className="metric-card">
+              <span>Fastest model</span>
+              <strong>{formatNumber(bestSpeed?.fps, 1)}</strong>
+              <small>{bestSpeed?.experiment_name}</small>
+            </article>
+            <article className="metric-card">
+              <span>Compared runs</span>
+              <strong>{rows.length}</strong>
+              <small>Sorted by mAP@0.5</small>
+            </article>
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -243,6 +268,8 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                   <th>mAP@0.5</th>
                   <th>mAP@0.5:0.95</th>
                   <th>FPS</th>
+                  <th>Frame time</th>
+                  <th>Detail</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,6 +286,12 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                     <td>{formatNumber(experiment.map50)}</td>
                     <td>{formatNumber(experiment.map5095)}</td>
                     <td>{formatNumber(experiment.fps, 1)}</td>
+                    <td>{formatNumber(experiment.frame_time_ms, 1)} ms</td>
+                    <td>
+                      <Link className="text-link" to={`/experiments/${experiment.id}`}>
+                        View run <ArrowRight size={15} aria-hidden="true" />
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -266,22 +299,195 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
           </div>
           <div className="wide-panel">
             <div className="section-heading">
-              <h2>{selected.experiment_name}</h2>
-              <p>{selected.method}</p>
+              <h2>Accuracy and Speed Tradeoff</h2>
+              <p>mAP@0.5 answers quality; FPS answers throughput. The best choice depends on the review goal.</p>
             </div>
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={selected.curve ?? []}>
+              <BarChart data={comparisonData}>
                 <CartesianGrid stroke="#d7dce2" vertical={false} />
-                <XAxis dataKey="epoch" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                <YAxis yAxisId="accuracy" tickLine={false} axisLine={false} />
+                <YAxis yAxisId="speed" orientation="right" tickLine={false} axisLine={false} />
                 <Tooltip />
-                <Line type="monotone" dataKey="map50" stroke="#002FA7" strokeWidth={3} name="mAP@0.5" />
-                <Line type="monotone" dataKey="precision" stroke="#111827" strokeWidth={2} name="Precision" />
-              </LineChart>
+                <Bar yAxisId="accuracy" dataKey="map50" fill="#002FA7" name="mAP@0.5" />
+                <Bar yAxisId="speed" dataKey="fps" fill="#111827" name="FPS" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+function ExperimentDetailPage({ onImport }: { onImport: () => void }) {
+  const { id } = useParams();
+  const [experiment, setExperiment] = useState<ExperimentDetail | null>(null);
+  const [state, setState] = useState<PageState>("loading");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) {
+      setState("error");
+      setError("No experiment id was provided.");
+      return;
+    }
+    setState("loading");
+    setError(null);
+    getExperiment(id)
+      .then((nextExperiment) => {
+        setExperiment(nextExperiment);
+        setState("normal");
+      })
+      .catch(() => {
+        setExperiment(null);
+        setError("This model run is not available yet. Import sample data first, then open a row from the comparison table.");
+        setState("error");
+      });
+  }, [id]);
+
+  if (state === "loading") {
+    return (
+      <section className="content-stack">
+        <StatePanel state="loading" title="Loading model run" body="VisionOps is reading the experiment metrics, curve, and related visual cases." />
+      </section>
+    );
+  }
+
+  if (state === "error" || !experiment) {
+    return (
+      <section className="content-stack">
+        <StatePanel
+          state="error"
+          title="Model run not found"
+          body={error ?? "The detail page could not load this experiment."}
+          action={<button className="secondary" onClick={onImport}>Import sample data</button>}
+        />
+      </section>
+    );
+  }
+
+  const metrics = [
+    { label: "mAP@0.5", value: formatNumber(experiment.map50), note: "Detection accuracy" },
+    { label: "Precision", value: formatNumber(experiment.precision), note: "False positive control" },
+    { label: "Recall", value: formatNumber(experiment.recall), note: "Missed object control" },
+    { label: "FPS", value: formatNumber(experiment.fps, 1), note: "Throughput" },
+    { label: "Frame time", value: `${formatNumber(experiment.frame_time_ms, 1)} ms`, note: "Single-frame latency" }
+  ];
+
+  return (
+    <section className="content-stack">
+      <div className="detail-header">
+        <div className="section-heading">
+          <Link className="text-link" to="/experiments">Back to comparison</Link>
+          <h2>{experiment.experiment_name}</h2>
+          <p>{experiment.method}</p>
+        </div>
+        <dl className="run-meta">
+          <div>
+            <dt>Group</dt>
+            <dd>{experiment.experiment_group}</dd>
+          </div>
+          <div>
+            <dt>Epoch</dt>
+            <dd>{experiment.epoch}</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>{experiment.data_source}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="metric-strip">
+        {metrics.map((metric) => (
+          <article className="metric-card" key={metric.label}>
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+            <small>{metric.note}</small>
+          </article>
+        ))}
+      </div>
+
+      <section className="wide-panel">
+        <div className="section-heading">
+          <h2>Training Record</h2>
+          <p>Each point comes from this run's metric curve, so the final score has a visible path.</p>
+        </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={experiment.curve}>
+            <CartesianGrid stroke="#d7dce2" vertical={false} />
+            <XAxis dataKey="epoch" tickLine={false} axisLine={false} />
+            <YAxis tickLine={false} axisLine={false} />
+            <Tooltip />
+            <Line type="monotone" dataKey="map50" stroke="#002FA7" strokeWidth={3} name="mAP@0.5" />
+            <Line type="monotone" dataKey="precision" stroke="#111827" strokeWidth={2} name="Precision" />
+            <Line type="monotone" dataKey="recall" stroke="#E4002B" strokeWidth={2} name="Recall" />
+          </LineChart>
+        </ResponsiveContainer>
+      </section>
+
+      <section className="analysis-grid">
+        <article className="wide-panel">
+          <div className="section-heading">
+            <h2>Model Analysis</h2>
+            <p>{experiment.analysis.headline}</p>
+          </div>
+          <div className="analysis-list">
+            <strong>Strengths</strong>
+            <ul>
+              {experiment.analysis.strengths.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <strong>Risks</strong>
+            <ul>
+              {experiment.analysis.risks.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <strong>Next steps</strong>
+            <ul>
+              {experiment.analysis.next_steps.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </article>
+        <article className="wide-panel">
+          <div className="section-heading">
+            <h2>Decision Note</h2>
+            <p>{experiment.analysis.tradeoff}</p>
+          </div>
+          <dl className="source-list">
+            <div>
+              <dt>Experiment folder</dt>
+              <dd>{experiment.experiment_folder}</dd>
+            </div>
+            <div>
+              <dt>Results CSV</dt>
+              <dd>{experiment.source_path}</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section className="wide-panel">
+        <div className="section-heading">
+          <h2>Related Visual Cases</h2>
+          <p>These examples belong to this model run only.</p>
+        </div>
+        {experiment.visual_cases.length ? (
+          <div className="gallery-grid">
+            {experiment.visual_cases.map((item) => (
+              <article className="case-card" key={item.id}>
+                <img src={assetUrl(item.image_url)} alt={item.description} />
+                <div>
+                  <strong>{item.case_type}</strong>
+                  <span>{item.model_name}</span>
+                  <p>{item.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <StatePanel state="empty" title="No related cases" body="This run has metrics, but no visual cases have been attached yet." />
+        )}
+      </section>
     </section>
   );
 }
@@ -494,18 +700,6 @@ export default function App() {
       .finally(() => setLoading(false));
   }, []);
 
-  const experimentsWithCurve = useMemo(
-    () =>
-      experiments.map((experiment) => ({
-        ...experiment,
-        curve: [
-          { epoch: 1, precision: experiment.precision * 0.68, recall: experiment.recall * 0.64, map50: experiment.map50 * 0.63, map5095: experiment.map5095 * 0.58 },
-          { epoch: Math.max(2, Math.floor(experiment.epoch / 2)), precision: experiment.precision * 0.9, recall: experiment.recall * 0.88, map50: experiment.map50 * 0.91, map5095: experiment.map5095 * 0.86 },
-          { epoch: experiment.epoch, precision: experiment.precision, recall: experiment.recall, map50: experiment.map50, map5095: experiment.map5095 }
-        ]
-      })),
-    [experiments]
-  );
   const currentState = pageState(loading, error, experiments.length > 0, Boolean(message));
 
   return (
@@ -517,7 +711,8 @@ export default function App() {
       ) : null}
       <Routes>
         <Route path="/" element={<Overview summary={summary} experiments={experiments} failures={failures} state={currentState} onImport={handleImport} />} />
-        <Route path="/experiments" element={<Experiments experiments={experimentsWithCurve} state={currentState} />} />
+        <Route path="/experiments" element={<Experiments experiments={experiments} state={currentState} />} />
+        <Route path="/experiments/:id" element={<ExperimentDetailPage onImport={handleImport} />} />
         <Route path="/failures" element={<Failures failures={failures} state={currentState} />} />
         <Route path="/infer" element={<Inference />} />
         <Route path="/demo-guide" element={<DemoGuide summary={summary} />} />

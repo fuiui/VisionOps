@@ -12,10 +12,28 @@ The final row becomes the experiment's metric snapshot. All rows are stored as c
 
 Visual cases are listed in the manifest and reference files under `sample_data/visual_cases/`.
 
-Local Research Mode will later scan a user-provided WildNight experiment directory such as:
+Local Research Mode should later import an experiment run artifact folder, not the whole code project. A real run folder should look roughly like this:
 
 ```text
-<your-local-path>/WildNight_Experiments
+<your-local-path>/WildNight_Experiments/
+  yolov8s_lowlight_aug_2026_06_01/
+    metadata.yaml
+    args.yaml
+    results.csv
+    weights/
+      best.pt
+      last.pt
+    plots/
+      confusion_matrix.png
+      results.png
+      PR_curve.png
+    predictions/
+      val_batch0_pred.jpg
+    failures/
+      manifest.json
+      low_light_false_negative.jpg
 ```
+
+VisionOps should store lightweight metadata and paths in SQLite. The original images, datasets, plots, and model weights should stay on disk.
 
 Large datasets, private images, and model weights should stay outside the repository.

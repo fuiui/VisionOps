@@ -23,7 +23,7 @@ Open VisionOps
 
 - Demo Mode with bundled `sample_data`.
 - Sample import into SQLite.
-- Overview, Experiment Comparison, Failure Gallery, Inference Demo, and Demo Guide pages.
+- Overview, Experiment Comparison, Model Run Detail, Failure Gallery, Inference Demo, and Demo Guide pages.
 - FastAPI endpoints that serve the frontend loop.
 - Clear empty, loading, error, success, normal, and mobile states.
 - README instructions for Docker and local development.
@@ -60,7 +60,7 @@ Must show:
 
 ### Experiment Comparison
 
-Purpose: make model tradeoffs clear.
+Purpose: compare two or more model runs side by side.
 
 Must show:
 
@@ -68,8 +68,23 @@ Must show:
 - model group,
 - precision, recall, mAP@0.5, mAP@0.5:0.95, FPS, frame time,
 - best model highlight,
-- metric chart,
+- metric chart across multiple runs,
+- a link from each row to the single-run detail page,
 - empty and error guidance.
+
+### Model Run Detail
+
+Purpose: explain one experiment run after the user chooses it from the comparison page.
+
+Must show:
+
+- experiment identity,
+- metric snapshot,
+- epoch-level metric curve,
+- mAP@0.5, precision, recall, FPS, and frame time,
+- analysis of strengths, risks, tradeoff, and next steps,
+- related visual cases for that model run,
+- source path for the imported results.
 
 ### Failure Gallery
 
@@ -146,7 +161,7 @@ Required Phase 1 API:
 - `GET /api/demo-summary`
 - `POST /api/import/sample`
 - `GET /api/experiments`
-- `GET /api/experiments/{id}`
+- `GET /api/experiments/{id}` with curve points, related visual cases, and model analysis
 - `GET /api/failures`
 - `POST /api/infer`
 
@@ -157,6 +172,8 @@ Required Phase 1 API:
 - A new user can understand the project from the first screen.
 - Empty states appear before importing sample data.
 - Importing sample data populates Overview, Experiment Comparison, and Failure Gallery.
+- Experiment Comparison remains a multi-run comparison page.
+- Clicking a model row opens Model Run Detail for one run's record and analysis.
 - The best mAP model and best FPS model are obvious.
 - Inference Demo gives clear success and error feedback.
 - Backend tests pass.
@@ -173,4 +190,3 @@ Every debugging pass should answer:
 - How was the fix verified?
 
 Every implementation pass should review diff for unrelated changes, private paths, hardcoded local assumptions, broken Docker instructions, and README drift.
-

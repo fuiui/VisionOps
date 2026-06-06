@@ -1,10 +1,12 @@
 export type Experiment = {
   id: string;
+  experiment_folder: string;
   experiment_name: string;
   experiment_group: string;
   method: string;
   epoch: number;
   source_path: string;
+  created_at: string;
   imported_at: string;
   notes: string;
   precision: number;
@@ -13,7 +15,22 @@ export type Experiment = {
   map5095: number;
   fps: number;
   frame_time_ms: number;
+  data_source: string;
   curve?: MetricPoint[];
+};
+
+export type ModelAnalysis = {
+  headline: string;
+  strengths: string[];
+  risks: string[];
+  next_steps: string[];
+  tradeoff: string;
+};
+
+export type ExperimentDetail = Experiment & {
+  curve: MetricCurvePoint[];
+  visual_cases: VisualCase[];
+  analysis: ModelAnalysis;
 };
 
 export type MetricSnapshot = {

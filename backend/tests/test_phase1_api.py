@@ -60,6 +60,26 @@ def test_experiment_detail_includes_metric_curve(tmp_path: Path) -> None:
     assert {"epoch", "map50", "precision", "recall"} <= set(payload["curve"][0])
 
 
+def test_experiment_detail_includes_analysis_and_related_visual_cases(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "visionops.db",
+        sample_data_dir=Path(__file__).parents[2] / "sample_data",
+    )
+    client = TestClient(app)
+    client.post("/api/import/sample")
+
+    response = client.get("/api/experiments/exp-yolov8s-lowlight")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis"]["headline"]
+    assert payload["analysis"]["strengths"]
+    assert payload["analysis"]["risks"]
+    assert payload["analysis"]["next_steps"]
+    assert payload["analysis"]["tradeoff"]
+    assert {item["experiment_id"] for item in payload["visual_cases"]} == {"exp-yolov8s-lowlight"}
+
+
 def test_demo_summary_reports_empty_state_before_import(tmp_path: Path) -> None:
     app = create_app(
         database_path=tmp_path / "visionops.db",

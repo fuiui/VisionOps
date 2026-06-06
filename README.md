@@ -10,6 +10,7 @@ YOLO experiment artifacts often live across scripts, CSV files, image folders, c
 
 - Which experiments were run?
 - Which model has the best mAP and speed tradeoff?
+- What happened inside one selected model run?
 - What failure cases are worth showing?
 - How would a single-image inference API fit into the system?
 
@@ -19,6 +20,7 @@ YOLO experiment artifacts often live across scripts, CSV files, image folders, c
 - React + TypeScript dashboard built around a reviewer-friendly product story.
 - Demo Mode sample import that works without real WildNight data.
 - Experiment comparison table and metric chart.
+- Model run detail page with metrics, curve, related visual cases, and analysis.
 - Failure gallery for visual detection cases.
 - Inference Demo that records uploads and returns a clear deterministic demo result.
 - Demo Guide page for a three-to-five-minute portfolio walkthrough.
@@ -53,7 +55,7 @@ flowchart LR
 
 ## Tech Stack
 
-- Backend: Python, FastAPI, SQLite, Pandas, OpenCV, Ultralytics-ready API boundary.
+- Backend: Python, FastAPI, SQLite, Pandas, and an Ultralytics-ready API boundary for later phases.
 - Frontend: React, TypeScript, Vite, Recharts, Axios, Lucide icons.
 - Runtime: Docker and Docker Compose.
 - Tests: pytest for backend API behavior.
@@ -91,7 +93,7 @@ npm run dev
 - `POST /api/import/sample` imports bundled Demo Mode data.
 - `POST /api/import/local` is reserved for Local Research Mode.
 - `GET /api/experiments` returns experiment rows with metrics.
-- `GET /api/experiments/{id}` returns one experiment with curve points.
+- `GET /api/experiments/{id}` returns one experiment with curve points, related visual cases, and model analysis.
 - `GET /api/failures` returns visual failure cases.
 - `POST /api/infer` accepts one image and returns a Phase 1 demo detection.
 

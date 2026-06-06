@@ -153,6 +153,55 @@ def list_experiments(database: Database) -> list[dict[str, Any]]:
     )
 
 
+def build_experiment_analysis(experiment: dict[str, Any]) -> dict[str, Any]:
+    precision = float(experiment["precision"])
+    recall = float(experiment["recall"])
+    map50 = float(experiment["map50"])
+    fps = float(experiment["fps"])
+    frame_time_ms = float(experiment["frame_time_ms"])
+
+    accuracy_label = "strong" if map50 >= 0.7 else "moderate" if map50 >= 0.62 else "early baseline"
+    speed_label = "fast" if fps >= 100 else "balanced" if fps >= 70 else "slower but richer"
+
+    if precision >= recall:
+        risk = "Recall trails precision, so missed objects should be reviewed before using this model as the final detector."
+        next_step = "Inspect false negatives and add targeted low-light or small-object examples before the next run."
+    else:
+        risk = "Recall is ahead of precision, so false positives need closer review before deployment."
+        next_step = "Inspect false positives and tighten confidence or augmentation choices in the next run."
+
+    return {
+        "headline": f"{experiment['experiment_name']} is a {accuracy_label} accuracy run with {speed_label} inference speed.",
+        "strengths": [
+            f"mAP@0.5 is {map50:.3f}, which makes this run useful for comparing detector quality.",
+            f"FPS is {fps:.1f} with {frame_time_ms:.1f} ms per frame, so the latency tradeoff is visible.",
+        ],
+        "risks": [risk],
+        "next_steps": [next_step],
+        "tradeoff": (
+            "Use this run when accuracy matters most."
+            if map50 >= 0.7
+            else "Use this run as a speed or baseline reference before deeper failure analysis."
+        ),
+    }
+
+
+def list_visual_cases_for_experiment(database: Database, experiment_id: str) -> list[dict[str, Any]]:
+    return database.query(
+        """
+        SELECT
+            v.id, v.experiment_id, v.image_path, v.image_url, v.case_type,
+            v.model_name, v.description, v.created_at,
+            e.experiment_name, e.experiment_group
+        FROM visual_cases v
+        JOIN experiments e ON e.id = v.experiment_id
+        WHERE v.experiment_id = ?
+        ORDER BY v.created_at DESC, v.id ASC
+        """,
+        (experiment_id,),
+    )
+
+
 def get_experiment_detail(database: Database, experiment_id: str) -> dict[str, Any] | None:
     experiment = database.query_one(
         """
@@ -178,6 +227,8 @@ def get_experiment_detail(database: Database, experiment_id: str) -> dict[str, A
         """,
         (experiment_id,),
     )
+    experiment["visual_cases"] = list_visual_cases_for_experiment(database, experiment_id)
+    experiment["analysis"] = build_experiment_analysis(experiment)
     return experiment
 
 

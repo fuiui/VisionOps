@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { DemoSummary, Experiment, ImportResult, InferenceResult, VisualCase } from "./types";
+import type { DemoSummary, Experiment, ExperimentDetail, ImportResult, InferenceResult, VisualCase } from "./types";
 
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -19,6 +19,11 @@ export async function getDemoSummary(): Promise<DemoSummary> {
 
 export async function getExperiments(): Promise<Experiment[]> {
   const response = await client.get<Experiment[]>("/api/experiments");
+  return response.data;
+}
+
+export async function getExperiment(id: string): Promise<ExperimentDetail> {
+  const response = await client.get<ExperimentDetail>(`/api/experiments/${id}`);
   return response.data;
 }
 

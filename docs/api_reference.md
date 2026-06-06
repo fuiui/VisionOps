@@ -22,7 +22,7 @@ Returns all imported experiments and metric snapshots.
 
 ## GET /api/experiments/{id}
 
-Returns one experiment plus metric curve points.
+Returns one experiment plus metric curve points, related visual cases, and a deterministic model analysis summary for the detail page.
 
 ## GET /api/failures
 
