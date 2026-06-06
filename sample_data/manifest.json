@@ -1,0 +1,79 @@
+{
+  "experiments": [
+    {
+      "id": "exp-yolov8n-baseline",
+      "experiment_folder": "experiments/yolov8n_baseline",
+      "experiment_name": "YOLOv8n Baseline",
+      "experiment_group": "baseline",
+      "method": "YOLOv8n trained with the initial WildNight preprocessing recipe.",
+      "results_csv": "experiments/yolov8n_baseline/results.csv",
+      "fps": 91.4,
+      "frame_time_ms": 10.9,
+      "created_at": "2026-06-01T10:00:00Z",
+      "notes": "Fast reference model for Demo Mode comparisons."
+    },
+    {
+      "id": "exp-yolov8s-lowlight",
+      "experiment_folder": "experiments/yolov8s_lowlight_aug",
+      "experiment_name": "YOLOv8s Low-Light Augmentation",
+      "experiment_group": "augmentation",
+      "method": "YOLOv8s with low-light augmentation and stronger color jitter.",
+      "results_csv": "experiments/yolov8s_lowlight_aug/results.csv",
+      "fps": 64.2,
+      "frame_time_ms": 15.6,
+      "created_at": "2026-06-02T15:30:00Z",
+      "notes": "Best sample mAP model with a moderate speed tradeoff."
+    },
+    {
+      "id": "exp-yolov8n-edge",
+      "experiment_folder": "experiments/yolov8n_edge_speed",
+      "experiment_name": "YOLOv8n Edge Speed",
+      "experiment_group": "speed",
+      "method": "YOLOv8n tuned for faster local CPU inference.",
+      "results_csv": "experiments/yolov8n_edge_speed/results.csv",
+      "fps": 118.7,
+      "frame_time_ms": 8.4,
+      "created_at": "2026-06-03T09:15:00Z",
+      "notes": "Fastest sample model for latency-focused demos."
+    }
+  ],
+  "visual_cases": [
+    {
+      "id": "case-low-light-fn",
+      "experiment_id": "exp-yolov8n-baseline",
+      "image_path": "visual_cases/low_light_false_negative.svg",
+      "case_type": "false negative",
+      "model_name": "YOLOv8n Baseline",
+      "description": "Low-light animal silhouette missed by the baseline sample model.",
+      "created_at": "2026-06-04T12:00:00Z"
+    },
+    {
+      "id": "case-small-object",
+      "experiment_id": "exp-yolov8s-lowlight",
+      "image_path": "visual_cases/small_object_detected.svg",
+      "case_type": "small object",
+      "model_name": "YOLOv8s Low-Light Augmentation",
+      "description": "Small distant object recovered after the augmentation recipe.",
+      "created_at": "2026-06-04T12:05:00Z"
+    },
+    {
+      "id": "case-false-positive",
+      "experiment_id": "exp-yolov8n-edge",
+      "image_path": "visual_cases/branch_false_positive.svg",
+      "case_type": "false positive",
+      "model_name": "YOLOv8n Edge Speed",
+      "description": "A high-contrast branch pattern is marked as a possible animal.",
+      "created_at": "2026-06-04T12:10:00Z"
+    },
+    {
+      "id": "case-correct-lowlight",
+      "experiment_id": "exp-yolov8s-lowlight",
+      "image_path": "visual_cases/low_light_correct.svg",
+      "case_type": "correct detection",
+      "model_name": "YOLOv8s Low-Light Augmentation",
+      "description": "Representative low-light detection used for the Demo Mode gallery.",
+      "created_at": "2026-06-04T12:15:00Z"
+    }
+  ]
+}
+

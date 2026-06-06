@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" role="img" aria-label="Small object detected sample">
+  <rect width="720" height="420" fill="#f7f7f8"/>
+  <rect x="0" y="300" width="720" height="120" fill="#d1d5db"/>
+  <circle cx="104" cy="80" r="42" fill="#bfdbfe"/>
+  <ellipse cx="462" cy="268" rx="30" ry="15" fill="#374151"/>
+  <circle cx="490" cy="258" r="10" fill="#374151"/>
+  <rect x="421" y="226" width="96" height="72" fill="none" stroke="#002FA7" stroke-width="5"/>
+  <text x="32" y="54" fill="#111827" font-family="Arial, Helvetica, sans-serif" font-size="24">Small object detected</text>
+  <text x="426" y="220" fill="#002FA7" font-family="Arial, Helvetica, sans-serif" font-size="18">wildlife 0.81</text>
+</svg>
+

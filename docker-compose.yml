@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - visionops_data:/app/data
+    environment:
+      VISIONOPS_DB_PATH: /app/data/visionops.db
+      VISIONOPS_SAMPLE_DATA_DIR: /app/sample_data
+      VISIONOPS_UPLOAD_DIR: /app/data/uploads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_BACKEND_PROXY: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  visionops_data:

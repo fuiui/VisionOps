@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" role="img" aria-label="Branch false positive sample">
+  <rect width="720" height="420" fill="#ffffff"/>
+  <rect x="0" y="314" width="720" height="106" fill="#e5e7eb"/>
+  <path d="M168 326 C256 232 338 196 520 120" stroke="#111827" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <path d="M330 210 L278 146 M392 176 L378 98 M454 146 L532 96" stroke="#111827" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <rect x="274" y="126" width="192" height="106" fill="none" stroke="#E4002B" stroke-width="5"/>
+  <text x="32" y="54" fill="#111827" font-family="Arial, Helvetica, sans-serif" font-size="24">False positive: branch pattern</text>
+  <text x="280" y="120" fill="#E4002B" font-family="Arial, Helvetica, sans-serif" font-size="18">wildlife 0.58</text>
+</svg>
+

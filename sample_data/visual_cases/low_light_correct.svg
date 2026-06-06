@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" role="img" aria-label="Low-light correct detection sample">
+  <rect width="720" height="420" fill="#0f172a"/>
+  <rect x="0" y="286" width="720" height="134" fill="#1e293b"/>
+  <circle cx="622" cy="74" r="28" fill="#e0f2fe" opacity="0.34"/>
+  <ellipse cx="366" cy="266" rx="74" ry="34" fill="#020617"/>
+  <circle cx="430" cy="240" r="21" fill="#020617"/>
+  <path d="M296 272 L270 328 M348 288 L334 338 M396 290 L416 338 M448 246 L486 224" stroke="#020617" stroke-width="13" stroke-linecap="round"/>
+  <rect x="270" y="204" width="238" height="132" fill="none" stroke="#002FA7" stroke-width="5"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="24">Correct low-light detection</text>
+  <text x="276" y="198" fill="#93c5fd" font-family="Arial, Helvetica, sans-serif" font-size="18">wildlife 0.84</text>
+</svg>
+
