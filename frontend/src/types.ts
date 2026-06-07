@@ -119,6 +119,24 @@ export type VisualCase = {
   experiment_id: string;
   image_url: string;
   case_type: string;
+  error_type: "TP" | "FP" | "FN" | "CLS_ERROR" | "LOC_ERROR";
+  gt_class: string;
+  pred_class: string;
+  confidence: number | null;
+  iou: number | null;
+  object_size: "small" | "medium" | "large" | string;
+  scene_tags: string[];
+  reason: string;
+  case_group_id: string;
+  model_comparisons: Array<{
+    id: string;
+    model_name: string;
+    error_type: "TP" | "FP" | "FN" | "CLS_ERROR" | "LOC_ERROR";
+    pred_class: string | null;
+    confidence: number | null;
+    iou: number | null;
+    reason: string | null;
+  }>;
   model_name: string;
   description: string;
   experiment_name: string;
@@ -136,9 +154,28 @@ export type InferenceResult = {
   model_path: string;
   confidence_threshold: number;
   inference_time_ms: number;
+  annotated_image_url: string;
+  parameters: {
+    confidence: number;
+    nms_iou: number;
+    image_size: number;
+    device: string;
+    save_result: boolean;
+  };
+  timing: {
+    preprocess_ms: number;
+    inference_ms: number;
+    postprocess_ms: number;
+    total_ms: number;
+    fps: number;
+  };
   detections: Array<{
     label: string;
     confidence: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
     box: { x: number; y: number; width: number; height: number };
   }>;
 };

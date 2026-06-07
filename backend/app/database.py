@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS visual_cases (
     image_path TEXT NOT NULL,
     image_url TEXT NOT NULL,
     case_type TEXT NOT NULL,
+    error_type TEXT NOT NULL DEFAULT '',
+    gt_class TEXT NOT NULL DEFAULT '',
+    pred_class TEXT NOT NULL DEFAULT '',
+    confidence REAL,
+    iou REAL,
+    object_size TEXT NOT NULL DEFAULT '',
+    scene_tags TEXT NOT NULL DEFAULT '[]',
+    reason TEXT NOT NULL DEFAULT '',
+    case_group_id TEXT NOT NULL DEFAULT '',
     model_name TEXT NOT NULL,
     description TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -95,6 +104,24 @@ class Database:
     def initialize(self) -> None:
         with sqlite3.connect(self.path) as connection:
             connection.executescript(SCHEMA)
+            self.migrate(connection)
+
+    def migrate(self, connection: sqlite3.Connection) -> None:
+        visual_columns = {row[1] for row in connection.execute("PRAGMA table_info(visual_cases)").fetchall()}
+        migrations = {
+            "error_type": "ALTER TABLE visual_cases ADD COLUMN error_type TEXT NOT NULL DEFAULT ''",
+            "gt_class": "ALTER TABLE visual_cases ADD COLUMN gt_class TEXT NOT NULL DEFAULT ''",
+            "pred_class": "ALTER TABLE visual_cases ADD COLUMN pred_class TEXT NOT NULL DEFAULT ''",
+            "confidence": "ALTER TABLE visual_cases ADD COLUMN confidence REAL",
+            "iou": "ALTER TABLE visual_cases ADD COLUMN iou REAL",
+            "object_size": "ALTER TABLE visual_cases ADD COLUMN object_size TEXT NOT NULL DEFAULT ''",
+            "scene_tags": "ALTER TABLE visual_cases ADD COLUMN scene_tags TEXT NOT NULL DEFAULT '[]'",
+            "reason": "ALTER TABLE visual_cases ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
+            "case_group_id": "ALTER TABLE visual_cases ADD COLUMN case_group_id TEXT NOT NULL DEFAULT ''",
+        }
+        for column, statement in migrations.items():
+            if column not in visual_columns:
+                connection.execute(statement)
 
     def execute(self, sql: str, params: Iterable[Any] = ()) -> None:
         with self.connect() as connection:

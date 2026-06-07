@@ -89,11 +89,20 @@ function formatSignedValue(value: number | undefined, digits = 3) {
 
 function shortCaseType(caseType: string) {
   const normalized = caseType.toLowerCase();
+  if (normalized === "fn") return "FN";
+  if (normalized === "fp") return "FP";
+  if (normalized === "cls_error") return "CLS";
+  if (normalized === "loc_error") return "LOC";
+  if (normalized === "tp") return "TP";
   if (normalized.includes("false negative")) return "FN";
   if (normalized.includes("false positive")) return "FP";
   if (normalized.includes("class")) return "CLS";
   if (normalized.includes("localization")) return "LOC";
   return "Other";
+}
+
+function formatOptionalNumber(value: number | null | undefined, digits = 2) {
+  return typeof value === "number" ? value.toFixed(digits) : "-";
 }
 
 function StatePanel({
@@ -128,12 +137,14 @@ function Shell({
   children,
   onImport,
   loading,
-  message
+  message,
+  demoMode
 }: {
   children: ReactNode;
   onImport: () => void;
   loading: boolean;
   message: string | null;
+  demoMode: boolean;
 }) {
   const navItems = [
     { to: "/", label: "Overview", icon: Activity },
@@ -142,7 +153,7 @@ function Shell({
     { to: "/failures", label: "Failures", icon: Images },
     { to: "/infer", label: "Inference", icon: Upload },
     { to: "/demo-guide", label: "Demo Guide", icon: RouteIcon }
-  ];
+  ].filter((item) => demoMode || item.to !== "/demo-guide");
 
   return (
     <div className="app-shell">
@@ -151,7 +162,7 @@ function Shell({
           <span className="brand-mark">01</span>
           <span>
             <strong>VisionOps</strong>
-            <small>Demo Mode MVP loop</small>
+            <small>{demoMode ? "Demo Mode MVP loop" : "Real Project Mode"}</small>
           </span>
         </Link>
         <nav>
@@ -173,10 +184,12 @@ function Shell({
             <h1>Experiment Review Loop</h1>
             {message ? <p className="topbar-message">{message}</p> : null}
           </div>
-          <button className="primary" onClick={onImport} disabled={loading} title="Import bundled sample data">
-            {loading ? <RefreshCw size={18} className="spin" /> : <Database size={18} />}
-            Import Sample Data
-          </button>
+          {demoMode ? (
+            <button className="primary" onClick={onImport} disabled={loading} title="Import bundled sample data">
+              {loading ? <RefreshCw size={18} className="spin" /> : <Database size={18} />}
+              Import Sample Data
+            </button>
+          ) : null}
         </header>
         {children}
       </main>
@@ -512,11 +525,11 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                         <strong>{metric.label}</strong>
                         <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
                       </div>
-                      <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={chartRows} margin={{ top: 28, right: 14, bottom: 8, left: 0 }}>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={chartRows} margin={{ top: 44, right: 14, bottom: 8, left: 0 }}>
                           <CartesianGrid stroke="#d7dce2" vertical={false} />
                           <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} minTickGap={12} />
-                          <YAxis tickLine={false} axisLine={false} />
+                          <YAxis tickLine={false} axisLine={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.18, 1)]} />
                           <Tooltip formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")} />
                           <Bar dataKey="value" fill={metricColor(metric)} name={metric.label}>
                             <LabelList dataKey="valueLabel" position="top" fontSize={12} offset={8} />
@@ -676,16 +689,16 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
   ];
 
   return (
-    <section className="experiment-layout">
-      <aside className="model-list-panel">
+    <section className="content-stack experiment-page">
+      <section className="wide-panel model-strip-panel">
         <div className="section-heading">
           <h2>Experiment</h2>
-          <p>Pick one model run to inspect its profile.</p>
+          <p>Pick one imported model run from the horizontal strip, then inspect the full training and failure record below.</p>
         </div>
-        <div className="model-list">
+        <div className="model-card-strip" aria-label="Model run selector">
           {rows.map((experiment) => (
             <button
-              className={experiment.id === selected.id ? "active" : ""}
+              className={`model-select-card ${experiment.id === selected.id ? "active" : ""}`}
               key={experiment.id}
               onClick={() => {
                 setSelectedId(experiment.id);
@@ -694,13 +707,13 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
               type="button"
             >
               <strong>{experiment.experiment_name}</strong>
-              <small>mAP@0.5 {formatNumber(experiment.map50)} / {experiment.epoch} epochs</small>
+              <span>mAP@0.5 {formatNumber(experiment.map50)}</span>
+              <small>FPS {formatNumber(experiment.fps, 1)} / {experiment.epoch} epochs</small>
             </button>
           ))}
         </div>
-      </aside>
+      </section>
 
-      <section className="content-stack">
         <div className="detail-header">
           <div className="section-heading">
             <h2>{selected.experiment_name}</h2>
@@ -891,7 +904,6 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
             )}
           </div>
         </section>
-      </section>
     </section>
   );
 }
@@ -1072,38 +1084,302 @@ function ExperimentDetailPage({ onImport }: { onImport: () => void }) {
 }
 
 function Failures({ failures, state }: { failures: VisualCase[]; state: PageState }) {
+  const [viewMode, setViewMode] = useState<"gallery" | "table" | "compare">("gallery");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modelFilter, setModelFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [classFilter, setClassFilter] = useState("all");
+  const [sizeFilter, setSizeFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [confidenceMin, setConfidenceMin] = useState("");
+  const [confidenceMax, setConfidenceMax] = useState("");
+  const [iouMin, setIouMin] = useState("");
+  const [iouMax, setIouMax] = useState("");
+
+  const models = Array.from(new Set(failures.map((item) => item.model_name).filter(Boolean))).sort();
+  const errorTypes = Array.from(new Set(failures.map((item) => item.error_type || item.case_type).filter(Boolean))).sort();
+  const classes = Array.from(new Set(failures.flatMap((item) => [item.gt_class, item.pred_class]).filter(Boolean))).sort();
+  const sizes = Array.from(new Set(failures.map((item) => item.object_size).filter(Boolean))).sort();
+  const tags = Array.from(new Set(failures.flatMap((item) => item.scene_tags ?? []))).sort();
+  const minConfidence = confidenceMin === "" ? null : Number(confidenceMin);
+  const maxConfidence = confidenceMax === "" ? null : Number(confidenceMax);
+  const minIou = iouMin === "" ? null : Number(iouMin);
+  const maxIou = iouMax === "" ? null : Number(iouMax);
+  const filteredFailures = failures.filter((item) => {
+    const errorType = item.error_type || item.case_type;
+    const classMatch = item.gt_class === classFilter || item.pred_class === classFilter;
+    const confidence = item.confidence;
+    const iou = item.iou;
+    return (
+      (modelFilter === "all" || item.model_name === modelFilter) &&
+      (typeFilter === "all" || errorType === typeFilter) &&
+      (classFilter === "all" || classMatch) &&
+      (sizeFilter === "all" || item.object_size === sizeFilter) &&
+      (tagFilter === "all" || (item.scene_tags ?? []).includes(tagFilter)) &&
+      (minConfidence === null || (typeof confidence === "number" && confidence >= minConfidence)) &&
+      (maxConfidence === null || (typeof confidence === "number" && confidence <= maxConfidence)) &&
+      (minIou === null || (typeof iou === "number" && iou >= minIou)) &&
+      (maxIou === null || (typeof iou === "number" && iou <= maxIou))
+    );
+  });
+  const selectedCase = filteredFailures.find((item) => item.id === selectedId) ?? filteredFailures[0] ?? null;
+  const stats = {
+    total: filteredFailures.length,
+    fn: filteredFailures.filter((item) => item.error_type === "FN").length,
+    fp: filteredFailures.filter((item) => item.error_type === "FP").length,
+    cls: filteredFailures.filter((item) => item.error_type === "CLS_ERROR").length,
+    loc: filteredFailures.filter((item) => item.error_type === "LOC_ERROR").length,
+    small: filteredFailures.filter((item) => item.object_size === "small").length
+  };
+  const distributionData = [
+    { name: "FN", value: stats.fn },
+    { name: "FP", value: stats.fp },
+    { name: "CLS", value: stats.cls },
+    { name: "LOC", value: stats.loc }
+  ];
+  const classRows = Object.values(
+    filteredFailures.reduce<Record<string, { className: string; total: number; fn: number; fp: number; cls: number; loc: number }>>((rows, item) => {
+      const className = item.gt_class || item.pred_class || "Unknown";
+      const row = rows[className] ?? { className, total: 0, fn: 0, fp: 0, cls: 0, loc: 0 };
+      row.total += 1;
+      if (item.error_type === "FN") row.fn += 1;
+      if (item.error_type === "FP") row.fp += 1;
+      if (item.error_type === "CLS_ERROR") row.cls += 1;
+      if (item.error_type === "LOC_ERROR") row.loc += 1;
+      rows[className] = row;
+      return rows;
+    }, {})
+  ).sort((a, b) => b.total - a.total || a.className.localeCompare(b.className));
+  const groups = Object.values(
+    filteredFailures.reduce<Record<string, VisualCase[]>>((nextGroups, item) => {
+      const key = item.case_group_id || item.id;
+      nextGroups[key] = [...(nextGroups[key] ?? []), item];
+      return nextGroups;
+    }, {})
+  );
+
+  function exportSelectedCases() {
+    const header = ["id", "model", "error_type", "gt_class", "pred_class", "confidence", "iou", "object_size", "scene_tags", "reason"];
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = filteredFailures.map((item) => [
+      item.id,
+      item.model_name,
+      item.error_type,
+      item.gt_class,
+      item.pred_class,
+      item.confidence ?? "",
+      item.iou ?? "",
+      item.object_size,
+      (item.scene_tags ?? []).join("|"),
+      item.reason || item.description
+    ].map(escape).join(","));
+    const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "visionops_failure_cases.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderCaseCard(item: VisualCase) {
+    return (
+      <button className={`failure-card ${selectedCase?.id === item.id ? "active" : ""}`} key={item.id} onClick={() => setSelectedId(item.id)} type="button">
+        <img src={assetUrl(item.image_url)} alt={item.description} />
+        <span className="case-type-pill">{item.error_type}</span>
+        <strong>{item.gt_class || "Background"} to {item.pred_class || "None"}</strong>
+        <small>Conf {formatOptionalNumber(item.confidence)} / IoU {formatOptionalNumber(item.iou)}</small>
+        <small>{item.object_size || "size unknown"} / {(item.scene_tags ?? []).join(", ") || "no tags"}</small>
+        <small>{item.model_name}</small>
+      </button>
+    );
+  }
+
   return (
     <section className="content-stack">
       <div className="section-heading">
         <h2>Failure Gallery</h2>
-        <p>Visual cases make model behavior inspectable instead of leaving examples buried in folders.</p>
+        <p>Filter diagnostic cases, inspect GT vs Pred, and compare the same scene across model runs.</p>
       </div>
       {!failures.length ? (
         <StatePanel state={state} title="No visual cases yet" body="Import sample data to populate failure and detection examples." />
       ) : (
-        <div className="gallery-grid">
-          {failures.map((item) => (
-            <article className="case-card" key={item.id}>
-              <img src={assetUrl(item.image_url)} alt={item.description} />
-              <div>
-                <strong>{item.case_type}</strong>
-                <span>{item.model_name}</span>
-                <p>{item.description}</p>
+        <>
+          <div className="failure-stats">
+            <article><span>Total</span><strong>{stats.total}</strong><small>filtered cases</small></article>
+            <article><span>False Negative</span><strong>{stats.fn}</strong><small>missed objects</small></article>
+            <article><span>False Positive</span><strong>{stats.fp}</strong><small>extra detections</small></article>
+            <article><span>Class Error</span><strong>{stats.cls}</strong><small>wrong class</small></article>
+            <article><span>Localization</span><strong>{stats.loc}</strong><small>box quality</small></article>
+            <article><span>Small Object</span><strong>{stats.small}</strong><small>hard cases</small></article>
+          </div>
+
+          <section className="wide-panel filter-panel">
+            <div className="filter-bar">
+              <label>Model<select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)}><option value="all">All models</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+              <label>Error Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option>{errorTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+              <label>Class<select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}><option value="all">All classes</option>{classes.map((className) => <option key={className} value={className}>{className}</option>)}</select></label>
+              <label>Object Size<select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}><option value="all">All sizes</option>{sizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+              <label>Scene Tag<select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}><option value="all">All tags</option>{tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+              <label>Conf min<input type="number" min="0" max="1" step="0.05" value={confidenceMin} onChange={(event) => setConfidenceMin(event.target.value)} /></label>
+              <label>Conf max<input type="number" min="0" max="1" step="0.05" value={confidenceMax} onChange={(event) => setConfidenceMax(event.target.value)} /></label>
+              <label>IoU min<input type="number" min="0" max="1" step="0.05" value={iouMin} onChange={(event) => setIouMin(event.target.value)} /></label>
+              <label>IoU max<input type="number" min="0" max="1" step="0.05" value={iouMax} onChange={(event) => setIouMax(event.target.value)} /></label>
+            </div>
+          </section>
+
+          <div className="comparison-heading">
+            <div className="segmented-control" aria-label="Failure view mode">
+              <button className={viewMode === "gallery" ? "active" : ""} onClick={() => setViewMode("gallery")} type="button">Gallery View</button>
+              <button className={viewMode === "table" ? "active" : ""} onClick={() => setViewMode("table")} type="button">Table View</button>
+              <button className={viewMode === "compare" ? "active" : ""} onClick={() => setViewMode("compare")} type="button">Compare View</button>
+            </div>
+            <button className="secondary" type="button" onClick={exportSelectedCases}>Export selected cases for paper</button>
+          </div>
+
+          <section className="failure-workbench">
+            <div className="failure-main-panel">
+              {viewMode === "gallery" ? (
+                <div className="failure-gallery-grid">
+                  {filteredFailures.map(renderCaseCard)}
+                </div>
+              ) : null}
+              {viewMode === "table" ? (
+                <div className="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr><th>Type</th><th>Model</th><th>GT</th><th>Pred</th><th>Conf</th><th>IoU</th><th>Size</th><th>Tags</th></tr>
+                    </thead>
+                    <tbody>
+                      {filteredFailures.map((item) => (
+                        <tr key={item.id} onClick={() => setSelectedId(item.id)}>
+                          <td>{item.error_type}</td>
+                          <td>{item.model_name}</td>
+                          <td>{item.gt_class || "Background"}</td>
+                          <td>{item.pred_class || "None"}</td>
+                          <td>{formatOptionalNumber(item.confidence)}</td>
+                          <td>{formatOptionalNumber(item.iou)}</td>
+                          <td>{item.object_size || "-"}</td>
+                          <td>{(item.scene_tags ?? []).join(", ") || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              {viewMode === "compare" ? (
+                <div className="compare-stack">
+                  {groups.map((group) => (
+                    <article className="compare-card" key={group[0].case_group_id || group[0].id}>
+                      <img src={assetUrl(group[0].image_url)} alt={group[0].description} />
+                      <div>
+                        <strong>{group[0].gt_class || "Background"} comparison</strong>
+                        <div className="compare-list">
+                          {group.map((item) => (
+                            <button key={item.id} type="button" onClick={() => setSelectedId(item.id)}>
+                              <span>{item.model_name}</span>
+                              <strong>{item.error_type}</strong>
+                              <small>{item.pred_class || "None"} · conf {formatOptionalNumber(item.confidence)}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+              {!filteredFailures.length ? <StatePanel state="empty" title="No cases match the filters" body="Relax one filter to bring diagnostic cases back into view." /> : null}
+            </div>
+
+            <aside className="failure-detail-panel">
+              {selectedCase ? (
+                <>
+                  <img src={assetUrl(selectedCase.image_url)} alt={selectedCase.description} />
+                  <h3>{selectedCase.error_type}: {selectedCase.gt_class || "Background"} to {selectedCase.pred_class || "None"}</h3>
+                  <dl className="detail-list">
+                    <div><dt>Model</dt><dd>{selectedCase.model_name}</dd></div>
+                    <div><dt>Confidence</dt><dd>{formatOptionalNumber(selectedCase.confidence)}</dd></div>
+                    <div><dt>IoU</dt><dd>{formatOptionalNumber(selectedCase.iou)}</dd></div>
+                    <div><dt>Size</dt><dd>{selectedCase.object_size || "-"}</dd></div>
+                  </dl>
+                  <p>{selectedCase.reason || selectedCase.description}</p>
+                  <div className="tag-list">{(selectedCase.scene_tags ?? []).map((tag) => <span key={tag}>{tag}</span>)}</div>
+                  <div className="model-comparison-list">
+                    <strong>Same scene across models</strong>
+                    {(selectedCase.model_comparisons ?? []).map((item) => (
+                      <span key={item.id}>{item.model_name}: {item.error_type} {item.confidence ? `(conf ${formatOptionalNumber(item.confidence)})` : ""}</span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <StatePanel state="empty" title="Select a case" body="Choose a failure card to inspect GT, prediction, confidence, IoU, and model comparisons." />
+              )}
+            </aside>
+          </section>
+
+          <section className="analysis-grid">
+            <article className="wide-panel">
+              <div className="section-heading">
+                <h2>Failure Distribution</h2>
+                <p>Filtered diagnostic counts by error type.</p>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={distributionData}>
+                  <CartesianGrid stroke="#d7dce2" vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#002FA7">
+                    <LabelList dataKey="value" position="top" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </article>
+            <article className="wide-panel">
+              <div className="section-heading">
+                <h2>Per-class Failure Table</h2>
+                <p>Classes are read from GT and prediction labels in the diagnosis records.</p>
+              </div>
+              <div className="table-wrap compact-table">
+                <table>
+                  <thead><tr><th>Class</th><th>Total</th><th>FN</th><th>FP</th><th>CLS</th><th>LOC</th></tr></thead>
+                  <tbody>
+                    {classRows.map((row) => (
+                      <tr key={row.className}><td><strong>{row.className}</strong></td><td>{row.total}</td><td>{row.fn}</td><td>{row.fp}</td><td>{row.cls}</td><td>{row.loc}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </article>
-          ))}
-        </div>
+          </section>
+        </>
       )}
     </section>
   );
 }
 
-function Inference() {
+function Inference({ experiments, demoMode }: { experiments: Experiment[]; demoMode: boolean }) {
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [modelPath, setModelPath] = useState("demo-mode");
   const [confidence, setConfidence] = useState(0.35);
+  const [nmsIou, setNmsIou] = useState(0.45);
+  const [imageSize, setImageSize] = useState(640);
+  const [device, setDevice] = useState("cpu");
+  const [saveResult, setSaveResult] = useState(true);
   const [result, setResult] = useState<InferenceResult | null>(null);
   const [state, setState] = useState<PageState>("empty");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1115,7 +1391,14 @@ function Inference() {
     setState("loading");
     setError(null);
     try {
-      setResult(await runInference(file, confidence));
+      setResult(await runInference(file, {
+        confidence,
+        nmsIou,
+        imageSize,
+        device,
+        saveResult,
+        modelPath
+      }));
       setState("success");
     } catch {
       setResult(null);
@@ -1124,16 +1407,35 @@ function Inference() {
     }
   }
 
+  const annotatedImage = result?.annotated_image_url ? assetUrl(result.annotated_image_url) : previewUrl;
+  const flowSteps = ["Upload image", "Select model", "Set threshold", "Run inference", "Review detection result"];
+
   return (
     <section className="inference-layout">
       <form className="upload-panel" onSubmit={submit}>
         <div className="section-heading">
           <h2>Inference Demo</h2>
-          <p>Phase 1 records the upload and returns deterministic Demo Mode output.</p>
+          <p>{demoMode ? "Current mode: Demo inference result shape. Real YOLO weights are not connected yet." : "Metrics are real, but inference is still demo until real YOLO weights are connected."}</p>
         </div>
+        <label className="dropzone">
+          <input type="file" accept="image/png,image/jpeg,image/jpg" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          {previewUrl ? (
+            <img src={previewUrl} alt="Uploaded inference preview" />
+          ) : (
+            <span>
+              <strong>Drag image here or click to upload</strong>
+              <small>Supported: JPG, PNG, JPEG. Max size: 10 MB.</small>
+            </span>
+          )}
+        </label>
         <label>
-          Image file
-          <input type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          Model
+          <select value={modelPath} onChange={(event) => setModelPath(event.target.value)}>
+            <option value="demo-mode">Demo Mode</option>
+            {experiments.map((experiment) => (
+              <option key={experiment.id} value={experiment.id}>{experiment.experiment_name}</option>
+            ))}
+          </select>
         </label>
         <label>
           Confidence threshold
@@ -1147,6 +1449,39 @@ function Inference() {
           />
           <span>{confidence.toFixed(2)}</span>
         </label>
+        <label>
+          NMS IoU threshold
+          <input
+            type="range"
+            min="0.1"
+            max="0.9"
+            step="0.05"
+            value={nmsIou}
+            onChange={(event) => setNmsIou(Number(event.target.value))}
+          />
+          <span>{nmsIou.toFixed(2)}</span>
+        </label>
+        <div className="inference-settings-grid">
+          <label>
+            Image size
+            <select value={imageSize} onChange={(event) => setImageSize(Number(event.target.value))}>
+              <option value={512}>512</option>
+              <option value={640}>640</option>
+              <option value={768}>768</option>
+            </select>
+          </label>
+          <label>
+            Device
+            <select value={device} onChange={(event) => setDevice(event.target.value)}>
+              <option value="cpu">CPU</option>
+              <option value="cuda">CUDA</option>
+            </select>
+          </label>
+        </div>
+        <label className="checkbox-control">
+          <input type="checkbox" checked={saveResult} onChange={(event) => setSaveResult(event.target.checked)} />
+          Save result image
+        </label>
         <button className="primary" disabled={state === "loading"} title="Run inference">
           {state === "loading" ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
           {state === "loading" ? "Running" : "Run Demo Inference"}
@@ -1157,30 +1492,56 @@ function Inference() {
         {state === "success" && result ? (
           <>
             <StatePanel state="success" title="Demo inference completed" body={result.message} />
-            <dl>
-              <div>
-                <dt>Mode</dt>
-                <dd>{result.mode}</dd>
+            <section className="annotated-preview">
+              {annotatedImage ? <img src={annotatedImage} alt="Annotated inference result" /> : null}
+              <div className="demo-box-label">wildlife {formatNumber(result.detections[0]?.confidence, 2)}</div>
+            </section>
+            <section>
+              <h2>Detection Results</h2>
+              <div className="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr><th>#</th><th>Class</th><th>Confidence</th><th>x1</th><th>y1</th><th>x2</th><th>y2</th></tr>
+                  </thead>
+                  <tbody>
+                    {result.detections.map((detection, index) => (
+                      <tr key={`${detection.label}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{detection.label}</td>
+                        <td>{formatNumber(detection.confidence, 2)}</td>
+                        <td>{formatNumber(detection.x1, 2)}</td>
+                        <td>{formatNumber(detection.y1, 2)}</td>
+                        <td>{formatNumber(detection.x2, 2)}</td>
+                        <td>{formatNumber(detection.y2, 2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div>
-                <dt>Time</dt>
-                <dd>{result.inference_time_ms} ms</dd>
+            </section>
+            <section>
+              <h2>Inference Speed</h2>
+              <div className="timing-grid">
+                <article><span>Preprocess</span><strong>{formatNumber(result.timing.preprocess_ms, 1)} ms</strong></article>
+                <article><span>Inference</span><strong>{formatNumber(result.timing.inference_ms, 1)} ms</strong></article>
+                <article><span>Postprocess</span><strong>{formatNumber(result.timing.postprocess_ms, 1)} ms</strong></article>
+                <article><span>Total</span><strong>{formatNumber(result.timing.total_ms, 1)} ms</strong></article>
+                <article><span>FPS</span><strong>{formatNumber(result.timing.fps, 1)}</strong></article>
               </div>
-              <div>
-                <dt>Detection</dt>
-                <dd>
-                  {result.detections[0].label} {formatNumber(result.detections[0].confidence, 2)}
-                </dd>
-              </div>
-            </dl>
+            </section>
           </>
         ) : null}
         {state === "empty" || state === "loading" ? (
-          <StatePanel
-            state={state}
-            title={state === "loading" ? "Running Demo Inference" : "Ready for one image"}
-            body="Upload a sample image to verify the API feedback shape before real YOLO weights are connected."
-          />
+          <section className="inference-flow">
+            <StatePanel
+              state={state}
+              title={state === "loading" ? "Running Demo Inference" : "Ready for one image"}
+              body="Upload a sample image to verify the API feedback shape before real YOLO weights are connected."
+            />
+            <ol>
+              {flowSteps.map((step) => <li key={step}>{step}</li>)}
+            </ol>
+          </section>
         ) : null}
       </div>
     </section>
@@ -1280,9 +1641,10 @@ export default function App() {
   }, []);
 
   const currentState = pageState(loading, error, experiments.length > 0, Boolean(message));
+  const demoMode = summary?.demo_mode ?? true;
 
   return (
-    <Shell onImport={handleImport} loading={loading} message={message}>
+    <Shell onImport={handleImport} loading={loading} message={message} demoMode={demoMode}>
       {error ? (
         <div className="page-alert">
           <StatePanel state="error" title="Backend request failed" body={error} action={<button className="secondary" onClick={() => refresh()}>Retry</button>} />
@@ -1294,7 +1656,7 @@ export default function App() {
         <Route path="/experiment" element={<Experiment experiments={experiments} state={currentState} />} />
         <Route path="/experiments/:id" element={<ExperimentDetailPage onImport={handleImport} />} />
         <Route path="/failures" element={<Failures failures={failures} state={currentState} />} />
-        <Route path="/infer" element={<Inference />} />
+        <Route path="/infer" element={<Inference experiments={experiments} demoMode={demoMode} />} />
         <Route path="/demo-guide" element={<DemoGuide summary={summary} />} />
       </Routes>
     </Shell>

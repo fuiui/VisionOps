@@ -110,6 +110,90 @@ def read_curve(csv_path: Path) -> list[dict[str, float | int]]:
     return points
 
 
+def optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "-":
+        return None
+    return float(text)
+
+
+def split_tags(value: Any) -> list[str]:
+    if value is None:
+        return []
+    return [tag.strip() for tag in re.split(r"[|;,]", str(value)) if tag.strip()]
+
+
+def normalize_error_type(value: Any) -> str:
+    text = str(value or "").strip().upper().replace(" ", "_")
+    aliases = {
+        "FALSE_NEGATIVE": "FN",
+        "FALSE_POSITIVE": "FP",
+        "CLASS_ERROR": "CLS_ERROR",
+        "LOCALIZATION_ERROR": "LOC_ERROR",
+        "CORRECT_DETECTION": "TP",
+        "SMALL_OBJECT": "TP",
+    }
+    return aliases.get(text, text or "TP")
+
+
+def visual_cases_from_diagnosis(sample_data_dir: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    diagnosis_path = sample_data_dir / "error_diagnosis.csv"
+    experiment_names = {experiment["id"]: experiment["experiment_name"] for experiment in manifest["experiments"]}
+    if diagnosis_path.exists():
+        with diagnosis_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = []
+            for row in csv.DictReader(handle):
+                error_type = normalize_error_type(row.get("error_type"))
+                image_path = row["image_path"]
+                reason = row.get("reason", "").strip()
+                rows.append(
+                    {
+                        "id": row["id"],
+                        "experiment_id": row["experiment_id"],
+                        "image_path": image_path,
+                        "image_url": f"/sample_data/{image_path}",
+                        "case_type": error_type,
+                        "error_type": error_type,
+                        "gt_class": row.get("gt_class", "").strip(),
+                        "pred_class": row.get("pred_class", "").strip(),
+                        "confidence": optional_float(row.get("confidence")),
+                        "iou": optional_float(row.get("iou")),
+                        "object_size": row.get("object_size", "").strip(),
+                        "scene_tags": split_tags(row.get("scene_tags")),
+                        "reason": reason,
+                        "case_group_id": row.get("case_group_id", row["id"]).strip() or row["id"],
+                        "model_name": row.get("model_name", "").strip() or experiment_names.get(row["experiment_id"], ""),
+                        "description": row.get("description", "").strip() or reason,
+                        "created_at": row.get("created_at", "").strip() or utc_now(),
+                    }
+                )
+            return rows
+    return [
+        {
+            "id": visual_case["id"],
+            "experiment_id": visual_case["experiment_id"],
+            "image_path": visual_case["image_path"],
+            "image_url": f"/sample_data/{visual_case['image_path']}",
+            "case_type": visual_case["case_type"],
+            "error_type": normalize_error_type(visual_case["case_type"]),
+            "gt_class": "",
+            "pred_class": "",
+            "confidence": None,
+            "iou": None,
+            "object_size": "",
+            "scene_tags": [],
+            "reason": visual_case["description"],
+            "case_group_id": visual_case["id"],
+            "model_name": visual_case["model_name"],
+            "description": visual_case["description"],
+            "created_at": visual_case["created_at"],
+        }
+        for visual_case in manifest["visual_cases"]
+    ]
+
+
 def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, int]:
     manifest_path = sample_data_dir / "manifest.json"
     if not manifest_path.exists():
@@ -218,21 +302,33 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
                 ],
             )
 
-        for visual_case in manifest["visual_cases"]:
+        visual_cases = visual_cases_from_diagnosis(sample_data_dir, manifest)
+        for visual_case in visual_cases:
             connection.execute(
                 """
                 INSERT INTO visual_cases (
                     id, experiment_id, image_path, image_url, case_type,
+                    error_type, gt_class, pred_class, confidence, iou,
+                    object_size, scene_tags, reason, case_group_id,
                     model_name, description, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     visual_case["id"],
                     visual_case["experiment_id"],
                     str(sample_data_dir / visual_case["image_path"]),
-                    f"/sample_data/{visual_case['image_path']}",
+                    visual_case["image_url"],
                     visual_case["case_type"],
+                    visual_case["error_type"],
+                    visual_case["gt_class"],
+                    visual_case["pred_class"],
+                    visual_case["confidence"],
+                    visual_case["iou"],
+                    visual_case["object_size"],
+                    json.dumps(visual_case["scene_tags"]),
+                    visual_case["reason"],
+                    visual_case["case_group_id"],
                     visual_case["model_name"],
                     visual_case["description"],
                     visual_case["created_at"],
@@ -241,7 +337,7 @@ def import_sample_data(database: Database, sample_data_dir: Path) -> dict[str, i
 
     return {
         "experiments_imported": len(manifest["experiments"]),
-        "visual_cases_imported": len(manifest["visual_cases"]),
+        "visual_cases_imported": len(visual_cases),
     }
 
 
@@ -479,11 +575,36 @@ def build_error_summary(experiment: dict[str, Any], visual_cases: list[dict[str,
     }
 
 
+def enrich_visual_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        row["scene_tags"] = json.loads(row["scene_tags"]) if isinstance(row.get("scene_tags"), str) and row["scene_tags"] else []
+        row["error_type"] = row.get("error_type") or normalize_error_type(row.get("case_type"))
+        row["case_group_id"] = row.get("case_group_id") or row["id"]
+        groups.setdefault(row["case_group_id"], []).append(row)
+    for row in rows:
+        row["model_comparisons"] = [
+            {
+                "id": item["id"],
+                "model_name": item["model_name"],
+                "error_type": item["error_type"],
+                "pred_class": item.get("pred_class"),
+                "confidence": item.get("confidence"),
+                "iou": item.get("iou"),
+                "reason": item.get("reason"),
+            }
+            for item in groups.get(row["case_group_id"], [])
+        ]
+    return rows
+
+
 def list_visual_cases_for_experiment(database: Database, experiment_id: str) -> list[dict[str, Any]]:
-    return database.query(
+    rows = database.query(
         """
         SELECT
             v.id, v.experiment_id, v.image_path, v.image_url, v.case_type,
+            v.error_type, v.gt_class, v.pred_class, v.confidence, v.iou,
+            v.object_size, v.scene_tags, v.reason, v.case_group_id,
             v.model_name, v.description, v.created_at,
             e.experiment_name, e.experiment_group
         FROM visual_cases v
@@ -493,6 +614,7 @@ def list_visual_cases_for_experiment(database: Database, experiment_id: str) -> 
         """,
         (experiment_id,),
     )
+    return enrich_visual_cases(rows)
 
 
 def get_experiment_detail(database: Database, experiment_id: str, sample_data_dir: Path | None = None) -> dict[str, Any] | None:
@@ -532,10 +654,12 @@ def get_experiment_detail(database: Database, experiment_id: str, sample_data_di
 
 
 def list_visual_cases(database: Database) -> list[dict[str, Any]]:
-    return database.query(
+    rows = database.query(
         """
         SELECT
             v.id, v.experiment_id, v.image_path, v.image_url, v.case_type,
+            v.error_type, v.gt_class, v.pred_class, v.confidence, v.iou,
+            v.object_size, v.scene_tags, v.reason, v.case_group_id,
             v.model_name, v.description, v.created_at,
             e.experiment_name, e.experiment_group
         FROM visual_cases v
@@ -543,6 +667,7 @@ def list_visual_cases(database: Database) -> list[dict[str, Any]]:
         ORDER BY v.created_at DESC, v.id ASC
         """
     )
+    return enrich_visual_cases(rows)
 
 
 def get_demo_summary(database: Database) -> dict[str, Any]:
@@ -562,8 +687,9 @@ def get_demo_summary(database: Database) -> dict[str, Any]:
     best_map_model = max(experiments, key=lambda experiment: experiment["map50"])
     best_fps_model = max(experiments, key=lambda experiment: experiment["fps"])
     latest_imported_at = max(experiment["imported_at"] for experiment in experiments)
+    demo_mode = all(experiment.get("data_source") == "sample_data" for experiment in experiments)
     return {
-        "demo_mode": True,
+        "demo_mode": demo_mode,
         "status": "normal",
         "experiment_count": len(experiments),
         "failure_case_count": len(failures),

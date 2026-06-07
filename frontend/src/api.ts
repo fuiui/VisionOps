@@ -32,11 +32,28 @@ export async function getFailures(): Promise<VisualCase[]> {
   return response.data;
 }
 
-export async function runInference(file: File, confidence: number): Promise<InferenceResult> {
+export type InferenceRequestOptions = {
+  confidence: number;
+  nmsIou: number;
+  imageSize: number;
+  device: string;
+  saveResult: boolean;
+  modelPath: string;
+};
+
+export async function runInference(file: File, options: InferenceRequestOptions): Promise<InferenceResult> {
   const form = new FormData();
   form.append("image", file);
+  const params = new URLSearchParams({
+    confidence: String(options.confidence),
+    nms_iou: String(options.nmsIou),
+    image_size: String(options.imageSize),
+    device: options.device,
+    save_result: String(options.saveResult),
+    model_path: options.modelPath
+  });
   const response = await client.post<InferenceResult>(
-    `/api/infer?confidence=${confidence}&model_path=demo-mode`,
+    `/api/infer?${params.toString()}`,
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
   );

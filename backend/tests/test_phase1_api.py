@@ -32,7 +32,7 @@ def test_import_sample_data_populates_experiments_and_failures(tmp_path: Path) -
 
     assert import_response.status_code == 200
     assert import_response.json()["experiments_imported"] == 3
-    assert import_response.json()["visual_cases_imported"] == 4
+    assert import_response.json()["visual_cases_imported"] >= 4
 
     experiments_response = client.get("/api/experiments")
     failures_response = client.get("/api/failures")
@@ -41,7 +41,38 @@ def test_import_sample_data_populates_experiments_and_failures(tmp_path: Path) -
     assert len(experiments_response.json()) == 3
     assert experiments_response.json()[0]["experiment_name"]
     assert failures_response.status_code == 200
-    assert len(failures_response.json()) == 4
+    assert len(failures_response.json()) >= 4
+
+
+def test_failures_include_diagnosis_fields_after_sample_import(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "visionops.db",
+        sample_data_dir=Path(__file__).parents[2] / "sample_data",
+    )
+    client = TestClient(app)
+    client.post("/api/import/sample")
+
+    response = client.get("/api/failures")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload
+    first = payload[0]
+    assert {
+        "error_type",
+        "gt_class",
+        "pred_class",
+        "confidence",
+        "iou",
+        "object_size",
+        "scene_tags",
+        "reason",
+        "case_group_id",
+        "model_comparisons",
+    } <= set(first)
+    assert isinstance(first["scene_tags"], list)
+    assert isinstance(first["model_comparisons"], list)
+    assert {item["error_type"] for item in payload} >= {"FN", "FP", "CLS_ERROR", "LOC_ERROR"}
 
 
 def test_experiment_detail_includes_metric_curve(tmp_path: Path) -> None:
@@ -213,7 +244,48 @@ def test_demo_summary_reports_story_metrics_after_sample_import(tmp_path: Path) 
     assert payload["demo_mode"] is True
     assert payload["status"] == "normal"
     assert payload["experiment_count"] == 3
-    assert payload["failure_case_count"] == 4
+    assert payload["failure_case_count"] >= 4
     assert payload["best_map_model"]["experiment_name"] == "YOLOv8s Low-Light Augmentation"
     assert payload["best_fps_model"]["experiment_name"] == "YOLOv8n Edge Speed"
     assert payload["latest_imported_at"]
+
+
+def test_demo_summary_switches_off_when_real_data_exists(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "visionops.db",
+        sample_data_dir=Path(__file__).parents[2] / "sample_data",
+    )
+    client = TestClient(app)
+    client.post("/api/import/sample")
+    app.state.database.execute("UPDATE metrics SET data_source = ?", ("real_upload",))
+
+    response = client.get("/api/demo-summary")
+
+    assert response.status_code == 200
+    assert response.json()["demo_mode"] is False
+
+
+def test_inference_returns_parameters_timing_and_xyxy_detections(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "visionops.db",
+        sample_data_dir=Path(__file__).parents[2] / "sample_data",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/infer?confidence=0.42&nms_iou=0.55&image_size=640&device=cpu&save_result=true&model_path=demo-mode",
+        files={"image": ("demo.jpg", b"demo image bytes", "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parameters"] == {
+        "confidence": 0.42,
+        "nms_iou": 0.55,
+        "image_size": 640,
+        "device": "cpu",
+        "save_result": True,
+    }
+    assert {"preprocess_ms", "inference_ms", "postprocess_ms", "total_ms", "fps"} <= set(payload["timing"])
+    assert payload["annotated_image_url"]
+    assert {"x1", "y1", "x2", "y2"} <= set(payload["detections"][0])
