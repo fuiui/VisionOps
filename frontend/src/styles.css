@@ -495,13 +495,17 @@ td input[type="checkbox"] {
 .experiment-layout {
   padding: 32px;
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 20px;
+}
+
+.experiment-layout > .content-stack {
+  padding: 0;
 }
 
 .model-list-panel {
   border: 1px solid #d7dce2;
-  padding: 20px;
+  padding: 16px;
   align-self: start;
 }
 
@@ -511,12 +515,12 @@ td input[type="checkbox"] {
 }
 
 .model-list button {
-  min-height: 76px;
+  min-height: 68px;
   border: 1px solid #d7dce2;
   background: #ffffff;
   color: #111827;
   text-align: left;
-  padding: 12px;
+  padding: 10px;
   cursor: pointer;
 }
 

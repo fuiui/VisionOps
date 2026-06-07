@@ -96,7 +96,7 @@ def create_app(
         experiment_id: str,
         db: Database = Depends(get_database),
     ) -> dict:
-        experiment = get_experiment_detail(db, experiment_id)
+        experiment = get_experiment_detail(db, experiment_id, app.state.sample_data_dir)
         if experiment is None:
             raise HTTPException(status_code=404, detail="Experiment not found")
         return experiment

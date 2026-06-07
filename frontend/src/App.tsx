@@ -22,7 +22,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   LabelList,
   Line,
   LineChart,
@@ -346,7 +345,6 @@ function Overview({
 }
 
 function Experiments({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
-  const [comparisonMode, setComparisonMode] = useState<"metric" | "model">("metric");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
 
@@ -495,97 +493,41 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                 <h2>Dynamic Metric Comparison</h2>
                 <p>Showing {selectedCount} selected model{selectedCount === 1 ? "" : "s"}. VisionOps separates units to avoid misleading axes.</p>
               </div>
-              <div className="segmented-control" aria-label="Comparison view mode">
-                <button
-                  className={comparisonMode === "metric" ? "active" : ""}
-                  onClick={() => setComparisonMode("metric")}
-                  type="button"
-                >
-                  View by metric
-                </button>
-                <button
-                  className={comparisonMode === "model" ? "active" : ""}
-                  onClick={() => setComparisonMode("model")}
-                  type="button"
-                >
-                  View by model
-                </button>
-              </div>
             </div>
             {metricDefinitions.length ? (
-              comparisonMode === "metric" ? (
-                <div className="metric-chart-grid">
-                  {metricDefinitions.map((metric) => {
-                    const chartRows = chartRowsSource.map((experiment) => {
-                      const value = experiment.metrics?.find((item) => item.key === metric.key);
-                      return {
-                        name: experiment.experiment_name.replace("YOLOv8", "v8"),
-                        value: value?.value,
-                        valueLabel: formatMetricValue(value)
-                      };
-                    });
-                    const missing = chartRows.filter((item) => item.value === undefined).length;
-                    return (
-                      <article className="metric-chart-card" key={metric.key}>
-                        <div className="metric-chart-title">
-                          <strong>{metric.label}</strong>
-                          <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
-                        </div>
-                        <ResponsiveContainer width="100%" height={210}>
-                          <BarChart data={chartRows}>
-                            <CartesianGrid stroke="#d7dce2" vertical={false} />
-                            <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                            <YAxis tickLine={false} axisLine={false} />
-                            <Tooltip formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")} />
-                            <Bar dataKey="value" fill={metricColor(metric)} name={metric.label}>
-                              <LabelList dataKey="valueLabel" position="top" fontSize={12} />
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                        {missing ? <small>{missing} model{missing > 1 ? "s" : ""} not recorded</small> : null}
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="model-chart-stack">
-                  {chartRowsSource.map((experiment) => {
-                    const metrics = [...(experiment.metrics ?? [])].sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
-                    const maxValue = Math.max(...metrics.map((metric) => Math.abs(metric.value)), 1);
-                    const chartRows = metrics.map((metric) => ({
-                      key: metric.key,
-                      label: metric.label,
-                      normalized: Math.abs(metric.value) / maxValue,
-                      valueLabel: formatMetricValue(metric),
-                      metric
-                    }));
-                    return (
-                      <article className="model-chart-card" key={experiment.id}>
-                        <div className="metric-chart-title">
-                          <strong>{experiment.experiment_name}</strong>
-                          <span>Normalized bars, original values shown</span>
-                        </div>
-                        <div className="model-chart-scroll">
-                          <ResponsiveContainer width={Math.max(620, chartRows.length * 118)} height={220}>
-                            <BarChart data={chartRows}>
-                              <CartesianGrid stroke="#d7dce2" vertical={false} />
-                              <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} />
-                              <YAxis tickLine={false} axisLine={false} domain={[0, 1]} hide />
-                              <Tooltip formatter={(_, __, item) => item.payload.valueLabel} />
-                              <Bar dataKey="normalized" name="Normalized metric">
-                                {chartRows.map((item) => (
-                                  <Cell key={item.key} fill={metricColor(item.metric)} />
-                                ))}
-                                <LabelList dataKey="valueLabel" position="top" fontSize={12} />
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              )
+              <div className="metric-chart-grid">
+                {metricDefinitions.map((metric) => {
+                  const chartRows = chartRowsSource.map((experiment) => {
+                    const value = experiment.metrics?.find((item) => item.key === metric.key);
+                    return {
+                      name: experiment.experiment_name.replace("YOLOv8", "v8"),
+                      value: value?.value,
+                      valueLabel: formatMetricValue(value)
+                    };
+                  });
+                  const missing = chartRows.filter((item) => item.value === undefined).length;
+                  return (
+                    <article className="metric-chart-card" key={metric.key}>
+                      <div className="metric-chart-title">
+                        <strong>{metric.label}</strong>
+                        <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
+                      </div>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <BarChart data={chartRows} margin={{ top: 28, right: 14, bottom: 8, left: 0 }}>
+                          <CartesianGrid stroke="#d7dce2" vertical={false} />
+                          <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} minTickGap={12} />
+                          <YAxis tickLine={false} axisLine={false} />
+                          <Tooltip formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")} />
+                          <Bar dataKey="value" fill={metricColor(metric)} name={metric.label}>
+                            <LabelList dataKey="valueLabel" position="top" fontSize={12} offset={8} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                      {missing ? <small>{missing} model{missing > 1 ? "s" : ""} not recorded</small> : null}
+                    </article>
+                  );
+                })}
+              </div>
             ) : (
               <StatePanel state="empty" title="No dynamic metrics" body="Import sample data again to populate the dynamic metric list." />
             )}

@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import shutil
 
 from fastapi.testclient import TestClient
 
@@ -104,6 +105,25 @@ def test_experiment_detail_includes_single_model_analysis_fields(tmp_path: Path)
     assert len(payload["class_metrics"]) == 17
     assert {"class_name", "precision", "recall", "map50", "map5095", "samples"} <= set(payload["class_metrics"][0])
     assert {"false_positive", "false_negative", "class_error", "localization_error"} <= set(payload["error_summary"])
+
+
+def test_experiment_detail_reads_class_labels_from_sample_data(tmp_path: Path) -> None:
+    sample_dir = tmp_path / "sample_data"
+    source_sample = Path(__file__).parents[2] / "sample_data"
+    shutil.copytree(source_sample, sample_dir)
+    (sample_dir / "class_labels.json").write_text(
+        json.dumps(["WildBoar", "RoeDeer", "SikaDeer", "NightFox"]),
+        encoding="utf-8",
+    )
+    app = create_app(database_path=tmp_path / "visionops.db", sample_data_dir=sample_dir)
+    client = TestClient(app)
+    client.post("/api/import/sample")
+
+    response = client.get("/api/experiments/exp-yolov8s-lowlight")
+
+    assert response.status_code == 200
+    class_names = [item["class_name"] for item in response.json()["class_metrics"]]
+    assert class_names == ["WildBoar", "RoeDeer", "SikaDeer", "NightFox"]
 
 
 def test_import_sample_data_returns_dynamic_numeric_metrics(tmp_path: Path) -> None:

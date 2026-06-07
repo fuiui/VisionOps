@@ -415,13 +415,17 @@ def build_curve_groups(curve: list[dict[str, Any]], experiment: dict[str, Any]) 
 
 
 def build_class_metrics(experiment: dict[str, Any]) -> list[dict[str, Any]]:
+    return build_class_metrics_for_labels(experiment, ANIMAL_CLASSES)
+
+
+def build_class_metrics_for_labels(experiment: dict[str, Any], class_labels: list[str]) -> list[dict[str, Any]]:
     seed = sum(ord(char) for char in experiment["id"])
     base_precision = float(experiment["precision"])
     base_recall = float(experiment["recall"])
     base_map50 = float(experiment["map50"])
     base_map5095 = float(experiment["map5095"])
     rows = []
-    for index, class_name in enumerate(ANIMAL_CLASSES):
+    for index, class_name in enumerate(class_labels):
         offset = ((seed + index * 7) % 11 - 5) * 0.012
         recall_offset = ((seed + index * 5) % 9 - 4) * 0.014
         map_offset = ((seed + index * 3) % 10 - 5) * 0.01
@@ -437,6 +441,23 @@ def build_class_metrics(experiment: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def load_class_labels(sample_data_dir: Path | None) -> list[str]:
+    if sample_data_dir is None:
+        return ANIMAL_CLASSES
+    labels_path = sample_data_dir / "class_labels.json"
+    if not labels_path.exists():
+        return ANIMAL_CLASSES
+    data = json.loads(labels_path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        labels = data.get("names") or data.get("classes") or data.get("labels")
+    else:
+        labels = data
+    if not isinstance(labels, list):
+        return ANIMAL_CLASSES
+    cleaned = [str(label).strip() for label in labels if str(label).strip()]
+    return cleaned or ANIMAL_CLASSES
 
 
 def build_error_summary(experiment: dict[str, Any], visual_cases: list[dict[str, Any]]) -> dict[str, Any]:
@@ -474,7 +495,7 @@ def list_visual_cases_for_experiment(database: Database, experiment_id: str) -> 
     )
 
 
-def get_experiment_detail(database: Database, experiment_id: str) -> dict[str, Any] | None:
+def get_experiment_detail(database: Database, experiment_id: str, sample_data_dir: Path | None = None) -> dict[str, Any] | None:
     experiment = database.query_one(
         """
         SELECT
@@ -505,7 +526,7 @@ def get_experiment_detail(database: Database, experiment_id: str) -> dict[str, A
     baseline = get_baseline_experiment(database)
     experiment["baseline_comparison"] = build_baseline_comparison(experiment, baseline, experiment["curve"])
     experiment["curve_groups"] = build_curve_groups(experiment["curve"], experiment)
-    experiment["class_metrics"] = build_class_metrics(experiment)
+    experiment["class_metrics"] = build_class_metrics_for_labels(experiment, load_class_labels(sample_data_dir))
     experiment["error_summary"] = build_error_summary(experiment, experiment["visual_cases"])
     return experiment
 
