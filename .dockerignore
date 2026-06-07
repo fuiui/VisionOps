@@ -5,6 +5,10 @@ frontend/dist
 backend/.venv
 __pycache__
 .pytest_cache
+pytest-cache-files-*
+.tmp
+runtime_data
+test_tmp
 data
 *.db
 *.sqlite
@@ -16,4 +20,3 @@ inference_outputs
 *.engine
 datasets
 WildNight_Experiments
-

@@ -6,11 +6,10 @@ COPY frontend/package.json /app/package.json
 COPY frontend/tsconfig.json /app/tsconfig.json
 COPY frontend/vite.config.ts /app/vite.config.ts
 COPY frontend/index.html /app/index.html
-RUN npm install
+RUN test -d /app/node_modules || npm install
 
 COPY frontend/src /app/src
 
 EXPOSE 3000
 
 CMD ["npm", "run", "dev"]
-
