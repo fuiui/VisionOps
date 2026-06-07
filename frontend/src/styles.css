@@ -332,10 +332,6 @@ h2 {
   background: #002fa7;
 }
 
-.legend-black {
-  background: #111827;
-}
-
 .comparison-heading {
   display: flex;
   justify-content: space-between;
@@ -413,6 +409,86 @@ h2 {
 .model-chart-scroll {
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+.model-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.model-picker-item {
+  border: 1px solid #d7dce2;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.model-picker-item input,
+td input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #002fa7;
+}
+
+.model-picker-item strong,
+.model-picker-item small {
+  display: block;
+}
+
+.experiment-layout {
+  padding: 32px;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.model-list-panel {
+  border: 1px solid #d7dce2;
+  padding: 20px;
+  align-self: start;
+}
+
+.model-list {
+  display: grid;
+  gap: 10px;
+}
+
+.model-list button {
+  min-height: 76px;
+  border: 1px solid #d7dce2;
+  background: #ffffff;
+  color: #111827;
+  text-align: left;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.model-list button.active {
+  border-color: #111827;
+  color: #002fa7;
+  background: #f7f7f8;
+}
+
+.model-list strong,
+.model-list small {
+  display: block;
+}
+
+.feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feature-list span {
+  border: 1px solid #d7dce2;
+  padding: 8px 10px;
+  color: #111827;
 }
 
 .table-wrap {
@@ -542,7 +618,7 @@ td small {
   padding: 24px;
 }
 
-label {
+.upload-panel label {
   display: grid;
   gap: 8px;
   margin-bottom: 18px;
@@ -574,7 +650,8 @@ dd {
 
 @media (max-width: 860px) {
   .app-shell,
-  .inference-layout {
+  .inference-layout,
+  .experiment-layout {
     grid-template-columns: 1fr;
   }
 

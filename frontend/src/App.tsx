@@ -8,7 +8,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Database,
-  FileText,
   Gauge,
   Images,
   Loader2,
@@ -116,7 +115,8 @@ function Shell({
 }) {
   const navItems = [
     { to: "/", label: "Overview", icon: Activity },
-    { to: "/experiments", label: "Experiments", icon: Table2 },
+    { to: "/experiments", label: "Experiment Comparison", icon: Table2 },
+    { to: "/experiment", label: "Experiment", icon: Target },
     { to: "/failures", label: "Failures", icon: Images },
     { to: "/infer", label: "Inference", icon: Upload },
     { to: "/demo-guide", label: "Demo Guide", icon: RouteIcon }
@@ -178,9 +178,7 @@ function Overview({
   const chartData = experiments.map((experiment) => ({
     name: experiment.experiment_name.replace("YOLOv8", "v8"),
     map50: experiment.map50,
-    map50Label: formatNumber(experiment.map50),
-    fps: experiment.fps,
-    fpsLabel: `${formatNumber(experiment.fps, 1)} FPS`
+    map50Label: formatNumber(experiment.map50)
   }));
 
   return (
@@ -225,20 +223,15 @@ function Overview({
           <div className="chart-frame">
             <div className="chart-legend" aria-label="Overview chart legend">
               <span><i className="legend-blue" /> mAP@0.5 detection accuracy</span>
-              <span><i className="legend-black" /> FPS inference speed</span>
             </div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData}>
                 <CartesianGrid stroke="#d7dce2" vertical={false} />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis yAxisId="accuracy" tickLine={false} axisLine={false} domain={[0, 1]} />
-                <YAxis yAxisId="speed" orientation="right" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} domain={[0, 1]} />
                 <Tooltip />
-                <Bar yAxisId="accuracy" dataKey="map50" fill="#002FA7" name="mAP@0.5">
+                <Bar dataKey="map50" fill="#002FA7" name="mAP@0.5">
                   <LabelList dataKey="map50Label" position="top" fontSize={12} fill="#002FA7" />
-                </Bar>
-                <Bar yAxisId="speed" dataKey="fps" fill="#111827" name="FPS">
-                  <LabelList dataKey="fpsLabel" position="top" fontSize={12} fill="#111827" />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -253,15 +246,38 @@ function Overview({
 
 function Experiments({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
   const [comparisonMode, setComparisonMode] = useState<"metric" | "model">("metric");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
-  const bestAccuracy = rows[0];
-  const bestSpeed = [...rows].sort((a, b) => b.fps - a.fps)[0];
-  const metricDefinitions = rows
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const rowIds = rows.map((experiment) => experiment.id);
+      if (!rowIds.length) return [];
+      const next = current.filter((id) => rowIds.includes(id));
+      return next.length ? next : rowIds;
+    });
+  }, [experiments]);
+
+  const selectedRows = rows.filter((experiment) => selectedIds.includes(experiment.id));
+  const chartRowsSource = selectedRows.length ? selectedRows : rows;
+  const bestAccuracy = chartRowsSource[0];
+  const bestSpeed = [...chartRowsSource].sort((a, b) => b.fps - a.fps)[0];
+  const metricDefinitions = chartRowsSource
     .flatMap((experiment) => experiment.metrics ?? [])
     .reduce<DynamicMetric[]>((definitions, metric) => {
       return definitions.some((item) => item.key === metric.key) ? definitions : [...definitions, metric];
     }, [])
     .sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
+  const selectedCount = selectedRows.length;
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      if (current.includes(id)) {
+        return current.length > 1 ? current.filter((item) => item !== id) : current;
+      }
+      return [...current, id];
+    });
+  }
 
   return (
     <section className="content-stack">
@@ -290,14 +306,42 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
             </article>
             <article className="metric-card">
               <span>Compared runs</span>
-              <strong>{rows.length}</strong>
-              <small>Sorted by mAP@0.5</small>
+              <strong>{selectedCount}</strong>
+              <small>{rows.length} imported runs</small>
             </article>
           </div>
+          <section className="wide-panel">
+            <div className="section-heading comparison-heading">
+              <div>
+                <h2>Select Models</h2>
+                <p>Choose the model runs you want to compare. Charts below update from the selected set.</p>
+              </div>
+              <button className="secondary" type="button" onClick={() => setSelectedIds(rows.map((experiment) => experiment.id))}>
+                Select all
+              </button>
+            </div>
+            <div className="model-picker-grid">
+              {rows.map((experiment) => (
+                <label className="model-picker-item" key={experiment.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(experiment.id)}
+                    disabled={selectedIds.includes(experiment.id) && selectedIds.length === 1}
+                    onChange={() => toggleSelected(experiment.id)}
+                  />
+                  <span>
+                    <strong>{experiment.experiment_name}</strong>
+                    <small>mAP@0.5 {formatNumber(experiment.map50)} · FPS {formatNumber(experiment.fps, 1)}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </section>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th>Compare</th>
                   <th>Experiment</th>
                   <th>Group</th>
                   <th>Epoch</th>
@@ -311,8 +355,17 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                 </tr>
               </thead>
               <tbody>
-                {rows.map((experiment, index) => (
-                  <tr key={experiment.id} className={index === 0 ? "best-row" : ""}>
+                {rows.map((experiment) => (
+                  <tr key={experiment.id} className={experiment.id === bestAccuracy?.id ? "best-row" : ""}>
+                    <td>
+                      <input
+                        aria-label={`Compare ${experiment.experiment_name}`}
+                        type="checkbox"
+                        checked={selectedIds.includes(experiment.id)}
+                        disabled={selectedIds.includes(experiment.id) && selectedIds.length === 1}
+                        onChange={() => toggleSelected(experiment.id)}
+                      />
+                    </td>
                     <td>
                       <strong>{experiment.experiment_name}</strong>
                       <small>{experiment.notes}</small>
@@ -339,7 +392,7 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
             <div className="section-heading comparison-heading">
               <div>
                 <h2>Dynamic Metric Comparison</h2>
-                <p>VisionOps reads every numeric metric recorded for each model. Different units are separated to avoid misleading axes.</p>
+                <p>Showing {selectedCount} selected model{selectedCount === 1 ? "" : "s"}. VisionOps separates units to avoid misleading axes.</p>
               </div>
               <div className="segmented-control" aria-label="Comparison view mode">
                 <button
@@ -362,7 +415,7 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
               comparisonMode === "metric" ? (
                 <div className="metric-chart-grid">
                   {metricDefinitions.map((metric) => {
-                    const chartRows = rows.map((experiment) => {
+                    const chartRows = chartRowsSource.map((experiment) => {
                       const value = experiment.metrics?.find((item) => item.key === metric.key);
                       return {
                         name: experiment.experiment_name.replace("YOLOv8", "v8"),
@@ -395,7 +448,7 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                 </div>
               ) : (
                 <div className="model-chart-stack">
-                  {rows.map((experiment) => {
+                  {chartRowsSource.map((experiment) => {
                     const metrics = [...(experiment.metrics ?? [])].sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
                     const maxValue = Math.max(...metrics.map((metric) => Math.abs(metric.value)), 1);
                     const chartRows = metrics.map((metric) => ({
@@ -438,6 +491,171 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+function Experiment({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
+  const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedId((current) => {
+      if (current && rows.some((experiment) => experiment.id === current)) return current;
+      return rows[0]?.id ?? null;
+    });
+  }, [experiments]);
+
+  if (!rows.length) {
+    return (
+      <section className="content-stack">
+        <div className="section-heading">
+          <h2>Experiment</h2>
+          <p>Select one imported model run and inspect its characteristics.</p>
+        </div>
+        <StatePanel
+          state={state}
+          title="No model runs imported"
+          body="Import sample data first. Later phases can add real uploaded model folders and weights here."
+        />
+      </section>
+    );
+  }
+
+  const selected = rows.find((experiment) => experiment.id === selectedId) ?? rows[0];
+  const sortedMetrics = [...(selected.metrics ?? [])].sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
+  const maxMetric = Math.max(...sortedMetrics.map((metric) => Math.abs(metric.value)), 1);
+  const metricBars = sortedMetrics.map((metric) => ({
+    key: metric.key,
+    label: metric.label,
+    normalized: Math.abs(metric.value) / maxMetric,
+    valueLabel: formatMetricValue(metric),
+    metric
+  }));
+  const accuracyNote = selected.map50 >= 0.7 ? "Strong accuracy candidate" : "Accuracy needs review";
+  const speedNote = selected.fps >= 50 ? "Good real-time speed" : "Speed tradeoff needs review";
+  const recallNote = selected.recall >= selected.precision ? "Recall-leaning behavior" : "Precision-leaning behavior";
+
+  return (
+    <section className="experiment-layout">
+      <aside className="model-list-panel">
+        <div className="section-heading">
+          <h2>Experiment</h2>
+          <p>Pick one model run to inspect its profile.</p>
+        </div>
+        <div className="model-list">
+          {rows.map((experiment) => (
+            <button
+              className={experiment.id === selected.id ? "active" : ""}
+              key={experiment.id}
+              onClick={() => setSelectedId(experiment.id)}
+              type="button"
+            >
+              <strong>{experiment.experiment_name}</strong>
+              <small>mAP@0.5 {formatNumber(experiment.map50)} · {experiment.epoch} epochs</small>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="content-stack">
+        <div className="detail-header">
+          <div className="section-heading">
+            <h2>{selected.experiment_name}</h2>
+            <p>{selected.method}</p>
+          </div>
+          <Link className="back-button" to={`/experiments/${selected.id}`}>
+            Open full run
+            <ArrowRight size={17} aria-hidden="true" />
+          </Link>
+        </div>
+
+        <div className="metric-strip">
+          <article className="metric-card">
+            <span>mAP@0.5</span>
+            <strong>{formatNumber(selected.map50)}</strong>
+            <small>Detection accuracy</small>
+          </article>
+          <article className="metric-card">
+            <span>Precision</span>
+            <strong>{formatNumber(selected.precision)}</strong>
+            <small>False positive control</small>
+          </article>
+          <article className="metric-card">
+            <span>Recall</span>
+            <strong>{formatNumber(selected.recall)}</strong>
+            <small>Missed object control</small>
+          </article>
+          <article className="metric-card">
+            <span>FPS</span>
+            <strong>{formatNumber(selected.fps, 1)}</strong>
+            <small>Throughput</small>
+          </article>
+          <article className="metric-card">
+            <span>Frame time</span>
+            <strong>{formatNumber(selected.frame_time_ms, 1)} ms</strong>
+            <small>Single-frame latency</small>
+          </article>
+        </div>
+
+        <section className="analysis-grid">
+          <article className="wide-panel">
+            <div className="section-heading">
+              <h2>Model Characteristics</h2>
+              <p>{selected.notes}</p>
+            </div>
+            <div className="feature-list">
+              <span>{accuracyNote}</span>
+              <span>{speedNote}</span>
+              <span>{recallNote}</span>
+              <span>{selected.experiment_group}</span>
+            </div>
+          </article>
+          <article className="wide-panel">
+            <div className="section-heading">
+              <h2>Source</h2>
+              <p>{selected.data_source}</p>
+            </div>
+            <dl className="source-list">
+              <div>
+                <dt>Experiment folder</dt>
+                <dd>{selected.experiment_folder}</dd>
+              </div>
+              <div>
+                <dt>Results CSV</dt>
+                <dd>{selected.source_path}</dd>
+              </div>
+            </dl>
+          </article>
+        </section>
+
+        <section className="wide-panel">
+          <div className="section-heading">
+            <h2>Recorded Metrics</h2>
+            <p>All numeric metrics available for this model are shown with original values.</p>
+          </div>
+          {metricBars.length ? (
+            <div className="model-chart-scroll">
+              <ResponsiveContainer width={Math.max(620, metricBars.length * 118)} height={220}>
+                <BarChart data={metricBars}>
+                  <CartesianGrid stroke="#d7dce2" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} />
+                  <YAxis tickLine={false} axisLine={false} domain={[0, 1]} hide />
+                  <Tooltip formatter={(_, __, item) => item.payload.valueLabel} />
+                  <Bar dataKey="normalized" name="Normalized metric">
+                    {metricBars.map((item) => (
+                      <Cell key={item.key} fill={metricColor(item.metric)} />
+                    ))}
+                    <LabelList dataKey="valueLabel" position="top" fontSize={12} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <StatePanel state="empty" title="No recorded metrics" body="This model run does not have parsed numeric metrics yet." />
+          )}
+        </section>
+      </section>
     </section>
   );
 }
@@ -837,6 +1055,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Overview summary={summary} experiments={experiments} failures={failures} state={currentState} onImport={handleImport} />} />
         <Route path="/experiments" element={<Experiments experiments={experiments} state={currentState} />} />
+        <Route path="/experiment" element={<Experiment experiments={experiments} state={currentState} />} />
         <Route path="/experiments/:id" element={<ExperimentDetailPage onImport={handleImport} />} />
         <Route path="/failures" element={<Failures failures={failures} state={currentState} />} />
         <Route path="/infer" element={<Inference />} />
