@@ -40,7 +40,7 @@ import {
   importSampleData,
   runInference
 } from "./api";
-import type { DemoSummary, DynamicMetric, Experiment, ExperimentDetail, InferenceResult, PageState, VisualCase } from "./types";
+import type { ClassMetric, DemoSummary, DynamicMetric, Experiment, ExperimentDetail, InferenceResult, PageState, VisualCase } from "./types";
 
 function formatNumber(value: number | undefined, digits = 3) {
   return typeof value === "number" ? value.toFixed(digits) : "0.000";
@@ -72,6 +72,18 @@ function formatMetricValue(metric: DynamicMetric | undefined) {
   const digits = metric.unit === "ms" || metric.unit === "fps" ? 1 : 3;
   const value = formatNumber(metric.value, digits);
   return metric.unit ? `${value} ${metric.unit}` : value;
+}
+
+function formatSignedPercent(value: number | undefined) {
+  if (typeof value !== "number") return "0.0%";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function formatSignedValue(value: number | undefined, digits = 3) {
+  if (typeof value !== "number") return "0.000";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}`;
 }
 
 function StatePanel({
@@ -331,7 +343,7 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                   />
                   <span>
                     <strong>{experiment.experiment_name}</strong>
-                    <small>mAP@0.5 {formatNumber(experiment.map50)} · FPS {formatNumber(experiment.fps, 1)}</small>
+                    <small>mAP@0.5 {formatNumber(experiment.map50)} / FPS {formatNumber(experiment.fps, 1)}</small>
                   </span>
                 </label>
               ))}
@@ -498,6 +510,10 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
 function Experiment({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ExperimentDetail | null>(null);
+  const [detailState, setDetailState] = useState<PageState>("empty");
+  const [curveTab, setCurveTab] = useState<"accuracy" | "loss" | "learning_rate">("accuracy");
+  const [classSort, setClassSort] = useState<"lowest_recall" | "lowest_map5095" | "class_name">("lowest_recall");
 
   useEffect(() => {
     setSelectedId((current) => {
@@ -505,6 +521,30 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
       return rows[0]?.id ?? null;
     });
   }, [experiments]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      setDetailState("empty");
+      return;
+    }
+    let cancelled = false;
+    setDetailState("loading");
+    getExperiment(selectedId)
+      .then((nextDetail) => {
+        if (cancelled) return;
+        setDetail(nextDetail);
+        setDetailState("normal");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDetail(null);
+        setDetailState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
 
   if (!rows.length) {
     return (
@@ -523,18 +563,83 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
   }
 
   const selected = rows.find((experiment) => experiment.id === selectedId) ?? rows[0];
-  const sortedMetrics = [...(selected.metrics ?? [])].sort((a, b) => metricRank(a) - metricRank(b) || a.label.localeCompare(b.label));
-  const maxMetric = Math.max(...sortedMetrics.map((metric) => Math.abs(metric.value)), 1);
-  const metricBars = sortedMetrics.map((metric) => ({
-    key: metric.key,
-    label: metric.label,
-    normalized: Math.abs(metric.value) / maxMetric,
-    valueLabel: formatMetricValue(metric),
-    metric
-  }));
+  const activeDetail = detail?.id === selected.id ? detail : null;
+  const baseline = activeDetail?.baseline_comparison;
+  const curveGroups = activeDetail?.curve_groups;
+  const errorSummary = activeDetail?.error_summary;
+  const visualCases = activeDetail?.visual_cases ?? [];
+  const baselineName = baseline?.map50?.baseline_experiment_name ?? "baseline";
   const accuracyNote = selected.map50 >= 0.7 ? "Strong accuracy candidate" : "Accuracy needs review";
   const speedNote = selected.fps >= 50 ? "Good real-time speed" : "Speed tradeoff needs review";
   const recallNote = selected.recall >= selected.precision ? "Recall-leaning behavior" : "Precision-leaning behavior";
+  const metricCards = [
+    {
+      key: "map50",
+      label: "mAP@0.5",
+      value: formatNumber(selected.map50),
+      comparison: `${formatSignedPercent(baseline?.map50?.percent_delta)} vs ${baselineName}`,
+      note: "Detection accuracy"
+    },
+    {
+      key: "precision",
+      label: "Precision",
+      value: formatNumber(selected.precision),
+      comparison: `${formatSignedPercent(baseline?.precision?.percent_delta)} vs ${baselineName}`,
+      note: "False positive control"
+    },
+    {
+      key: "recall",
+      label: "Recall",
+      value: formatNumber(selected.recall),
+      comparison: `${formatSignedPercent(baseline?.recall?.percent_delta)} vs ${baselineName}`,
+      note: "Missed object control"
+    },
+    {
+      key: "fps",
+      label: "FPS",
+      value: formatNumber(selected.fps, 1),
+      comparison: `${selected.fps >= 30 ? "real-time OK" : "speed risk"} / ${formatSignedValue(baseline?.fps?.absolute_delta, 1)} fps`,
+      note: "Throughput"
+    },
+    {
+      key: "frame_time_ms",
+      label: "Frame time",
+      value: `${formatNumber(selected.frame_time_ms, 1)} ms`,
+      comparison: `${selected.frame_time_ms <= 30 ? "below 30 ms" : "above 30 ms"} / ${formatSignedValue(baseline?.frame_time_ms?.absolute_delta, 1)} ms`,
+      note: "Single-frame latency"
+    }
+  ];
+  const sortedClassMetrics = [...(activeDetail?.class_metrics ?? [])].sort((a, b) => {
+    if (classSort === "class_name") return a.class_name.localeCompare(b.class_name);
+    if (classSort === "lowest_map5095") return a.map5095 - b.map5095;
+    return a.recall - b.recall;
+  });
+  const curveData = curveGroups?.[curveTab] ?? [];
+  const curveLines = {
+    accuracy: [
+      { key: "precision", name: "Precision", color: "#111827" },
+      { key: "recall", name: "Recall", color: "#E4002B" },
+      { key: "map50", name: "mAP@0.5", color: "#002FA7" },
+      { key: "map5095", name: "mAP@0.5:0.95", color: "#4B5563" }
+    ],
+    loss: [
+      { key: "train_box_loss", name: "train/box_loss", color: "#002FA7" },
+      { key: "train_cls_loss", name: "train/cls_loss", color: "#111827" },
+      { key: "train_dfl_loss", name: "train/dfl_loss", color: "#4B5563" },
+      { key: "val_box_loss", name: "val/box_loss", color: "#E4002B" },
+      { key: "val_cls_loss", name: "val/cls_loss", color: "#A16207" },
+      { key: "val_dfl_loss", name: "val/dfl_loss", color: "#64748B" }
+    ],
+    learning_rate: [
+      { key: "lr", name: "Learning rate", color: "#002FA7" }
+    ]
+  }[curveTab];
+  const errorCards = [
+    { label: "False Negative", value: errorSummary?.false_negative ?? 0, detail: "Missed objects" },
+    { label: "False Positive", value: errorSummary?.false_positive ?? 0, detail: "Extra detections" },
+    { label: "Class Error", value: errorSummary?.class_error ?? 0, detail: "Wrong category" },
+    { label: "Localization Error", value: errorSummary?.localization_error ?? 0, detail: "Box quality issue" }
+  ];
 
   return (
     <section className="experiment-layout">
@@ -552,7 +657,7 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
               type="button"
             >
               <strong>{experiment.experiment_name}</strong>
-              <small>mAP@0.5 {formatNumber(experiment.map50)} · {experiment.epoch} epochs</small>
+              <small>mAP@0.5 {formatNumber(experiment.map50)} / {experiment.epoch} epochs</small>
             </button>
           ))}
         </div>
@@ -564,38 +669,35 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
             <h2>{selected.experiment_name}</h2>
             <p>{selected.method}</p>
           </div>
-          <Link className="back-button" to={`/experiments/${selected.id}`}>
-            Open full run
-            <ArrowRight size={17} aria-hidden="true" />
-          </Link>
+          <dl className="run-meta">
+            <div>
+              <dt>Group</dt>
+              <dd>{selected.experiment_group}</dd>
+            </div>
+            <div>
+              <dt>Final epoch</dt>
+              <dd>{selected.epoch}</dd>
+            </div>
+            <div>
+              <dt>Baseline</dt>
+              <dd>{baselineName}</dd>
+            </div>
+          </dl>
         </div>
 
         <div className="metric-strip">
-          <article className="metric-card">
-            <span>mAP@0.5</span>
-            <strong>{formatNumber(selected.map50)}</strong>
-            <small>Detection accuracy</small>
-          </article>
-          <article className="metric-card">
-            <span>Precision</span>
-            <strong>{formatNumber(selected.precision)}</strong>
-            <small>False positive control</small>
-          </article>
-          <article className="metric-card">
-            <span>Recall</span>
-            <strong>{formatNumber(selected.recall)}</strong>
-            <small>Missed object control</small>
-          </article>
-          <article className="metric-card">
-            <span>FPS</span>
-            <strong>{formatNumber(selected.fps, 1)}</strong>
-            <small>Throughput</small>
-          </article>
-          <article className="metric-card">
-            <span>Frame time</span>
-            <strong>{formatNumber(selected.frame_time_ms, 1)} ms</strong>
-            <small>Single-frame latency</small>
-          </article>
+          {metricCards.map((card) => {
+            const comparison = baseline?.[card.key];
+            return (
+              <article className="metric-card metric-card-detailed" key={card.key}>
+                <span>{card.label}</span>
+                <strong>{card.value}</strong>
+                <small>{card.comparison}</small>
+                <small>{card.note}</small>
+                <small>Best epoch: {comparison?.best_epoch ?? selected.epoch} / Final epoch: {comparison?.final_epoch ?? selected.epoch}</small>
+              </article>
+            );
+          })}
         </div>
 
         <section className="analysis-grid">
@@ -630,30 +732,127 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
         </section>
 
         <section className="wide-panel">
-          <div className="section-heading">
-            <h2>Recorded Metrics</h2>
-            <p>All numeric metrics available for this model are shown with original values.</p>
+          <div className="comparison-heading">
+            <div className="section-heading">
+              <h2>Training Curves</h2>
+              <p>Inspect accuracy, loss, and learning-rate progress across epochs.</p>
+            </div>
+            <div className="segmented-control" aria-label="Training curve group">
+              <button className={curveTab === "accuracy" ? "active" : ""} onClick={() => setCurveTab("accuracy")} type="button">
+                Accuracy Curves
+              </button>
+              <button className={curveTab === "loss" ? "active" : ""} onClick={() => setCurveTab("loss")} type="button">
+                Loss Curves
+              </button>
+              <button className={curveTab === "learning_rate" ? "active" : ""} onClick={() => setCurveTab("learning_rate")} type="button">
+                Learning Rate
+              </button>
+            </div>
           </div>
-          {metricBars.length ? (
-            <div className="model-chart-scroll">
-              <ResponsiveContainer width={Math.max(620, metricBars.length * 118)} height={220}>
-                <BarChart data={metricBars}>
+          {detailState === "loading" ? (
+            <StatePanel state="loading" title="Loading training curves" body="VisionOps is reading the selected model run." />
+          ) : detailState === "error" ? (
+            <StatePanel state="error" title="Could not load training curves" body="Import sample data again or choose another model run." />
+          ) : curveData.length ? (
+            <div className="chart-frame">
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={curveData}>
                   <CartesianGrid stroke="#d7dce2" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} />
-                  <YAxis tickLine={false} axisLine={false} domain={[0, 1]} hide />
-                  <Tooltip formatter={(_, __, item) => item.payload.valueLabel} />
-                  <Bar dataKey="normalized" name="Normalized metric">
-                    {metricBars.map((item) => (
-                      <Cell key={item.key} fill={metricColor(item.metric)} />
-                    ))}
-                    <LabelList dataKey="valueLabel" position="top" fontSize={12} />
-                  </Bar>
-                </BarChart>
+                  <XAxis dataKey="epoch" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  {curveLines.map((line) => (
+                    <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={2.5} name={line.name} dot={false} />
+                  ))}
+                </LineChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <StatePanel state="empty" title="No recorded metrics" body="This model run does not have parsed numeric metrics yet." />
+            <StatePanel state="empty" title="No training curves" body="This model run does not include epoch-level curve data yet." />
           )}
+        </section>
+
+        <section className="wide-panel">
+          <div className="comparison-heading">
+            <div className="section-heading">
+              <h2>Class Performance</h2>
+              <p>Per-class precision, recall, mAP, and sample count for the demo animal taxonomy.</p>
+            </div>
+            <label className="select-control">
+              Sort
+              <select value={classSort} onChange={(event) => setClassSort(event.target.value as typeof classSort)}>
+                <option value="lowest_recall">Lowest recall</option>
+                <option value="lowest_map5095">Lowest mAP@0.5:0.95</option>
+                <option value="class_name">Class name</option>
+              </select>
+            </label>
+          </div>
+          {detailState === "loading" ? (
+            <StatePanel state="loading" title="Loading class metrics" body="VisionOps is preparing the per-class table." />
+          ) : sortedClassMetrics.length ? (
+            <div className="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Class</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>mAP@0.5</th>
+                    <th>mAP@0.5:0.95</th>
+                    <th>Samples</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedClassMetrics.map((item: ClassMetric) => (
+                    <tr key={item.class_name}>
+                      <td><strong>{item.class_name}</strong></td>
+                      <td>{formatNumber(item.precision)}</td>
+                      <td>{formatNumber(item.recall)}</td>
+                      <td>{formatNumber(item.map50)}</td>
+                      <td>{formatNumber(item.map5095)}</td>
+                      <td>{item.samples}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <StatePanel state={detailState === "error" ? "error" : "empty"} title="No class metrics" body="This model run does not include per-class metrics yet." />
+          )}
+        </section>
+
+        <section className="wide-panel">
+          <div className="section-heading">
+            <h2>Error Analysis</h2>
+            <p>Failure summary and related visual cases for the selected model.</p>
+          </div>
+          <div className="error-analysis-layout">
+            <div className="error-card-grid">
+              {errorCards.map((card) => (
+                <article className="error-card" key={card.label}>
+                  <span>{card.label}</span>
+                  <strong>{card.value}</strong>
+                  <small>{card.detail}</small>
+                </article>
+              ))}
+            </div>
+            {visualCases.length ? (
+              <div className="gallery-grid compact-gallery">
+                {visualCases.map((item) => (
+                  <article className="case-card" key={item.id}>
+                    <img src={assetUrl(item.image_url)} alt={item.description} />
+                    <div>
+                      <strong>{item.case_type}</strong>
+                      <span>{item.model_name}</span>
+                      <p>{item.description}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <StatePanel state={detailState === "loading" ? "loading" : "empty"} title="No visual cases" body="This model does not have linked failure images yet." />
+            )}
+          </div>
         </section>
       </section>
     </section>

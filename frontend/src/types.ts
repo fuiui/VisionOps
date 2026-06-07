@@ -41,6 +41,23 @@ export type ExperimentDetail = Experiment & {
   curve: MetricCurvePoint[];
   visual_cases: VisualCase[];
   analysis: ModelAnalysis;
+  baseline_comparison: Record<string, BaselineMetricComparison>;
+  curve_groups: CurveGroups;
+  class_metrics: ClassMetric[];
+  error_summary: ErrorSummary;
+};
+
+export type BaselineMetricComparison = {
+  label: string;
+  current: number;
+  baseline: number;
+  absolute_delta: number;
+  percent_delta: number;
+  direction: "higher" | "lower";
+  baseline_experiment_id: string;
+  baseline_experiment_name: string;
+  best_epoch: number;
+  final_epoch: number;
 };
 
 export type MetricSnapshot = {
@@ -61,6 +78,41 @@ export type MetricPoint = {
 };
 
 export type MetricCurvePoint = MetricPoint;
+
+export type CurveGroups = {
+  accuracy: Array<MetricCurvePoint>;
+  loss: Array<{
+    epoch: number;
+    train_box_loss: number;
+    train_cls_loss: number;
+    train_dfl_loss: number;
+    val_box_loss: number;
+    val_cls_loss: number;
+    val_dfl_loss: number;
+  }>;
+  learning_rate: Array<{
+    epoch: number;
+    lr: number;
+  }>;
+};
+
+export type ClassMetric = {
+  class_name: string;
+  precision: number;
+  recall: number;
+  map50: number;
+  map5095: number;
+  samples: number;
+};
+
+export type ErrorSummary = {
+  false_positive: number;
+  false_negative: number;
+  class_error: number;
+  localization_error: number;
+  visual_case_count: number;
+  case_type_counts: Record<string, number>;
+};
 
 export type VisualCase = {
   id: string;

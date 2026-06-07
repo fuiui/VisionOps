@@ -81,6 +81,31 @@ def test_experiment_detail_includes_analysis_and_related_visual_cases(tmp_path: 
     assert {item["experiment_id"] for item in payload["visual_cases"]} == {"exp-yolov8s-lowlight"}
 
 
+def test_experiment_detail_includes_single_model_analysis_fields(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "visionops.db",
+        sample_data_dir=Path(__file__).parents[2] / "sample_data",
+    )
+    client = TestClient(app)
+    client.post("/api/import/sample")
+
+    response = client.get("/api/experiments/exp-yolov8s-lowlight")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert {"map50", "precision", "recall", "fps", "frame_time_ms"} <= set(payload["baseline_comparison"])
+    assert payload["baseline_comparison"]["map50"]["baseline_experiment_name"] == "YOLOv8n Baseline"
+    assert payload["baseline_comparison"]["map50"]["absolute_delta"] > 0
+    assert payload["baseline_comparison"]["map50"]["best_epoch"] <= payload["baseline_comparison"]["map50"]["final_epoch"]
+    assert {"accuracy", "loss", "learning_rate"} <= set(payload["curve_groups"])
+    assert {"precision", "recall", "map50", "map5095"} <= set(payload["curve_groups"]["accuracy"][0])
+    assert {"train_box_loss", "val_box_loss", "train_cls_loss", "val_cls_loss"} <= set(payload["curve_groups"]["loss"][0])
+    assert "lr" in payload["curve_groups"]["learning_rate"][0]
+    assert len(payload["class_metrics"]) == 17
+    assert {"class_name", "precision", "recall", "map50", "map5095", "samples"} <= set(payload["class_metrics"][0])
+    assert {"false_positive", "false_negative", "class_error", "localization_error"} <= set(payload["error_summary"])
+
+
 def test_import_sample_data_returns_dynamic_numeric_metrics(tmp_path: Path) -> None:
     sample_dir = tmp_path / "sample_data"
     experiment_dir = sample_dir / "experiments" / "dynamic_run"

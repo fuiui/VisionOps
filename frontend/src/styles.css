@@ -234,6 +234,19 @@ h2 {
   line-height: 1;
 }
 
+.metric-card-detailed {
+  min-height: 172px;
+  gap: 8px;
+}
+
+.metric-card-detailed strong {
+  font-size: 38px;
+}
+
+.metric-card-detailed small {
+  display: block;
+}
+
 .wide-panel {
   grid-column: 1 / -1;
   padding: 24px;
@@ -479,6 +492,24 @@ td input[type="checkbox"] {
   display: block;
 }
 
+.select-control {
+  min-width: 220px;
+  display: grid;
+  gap: 6px;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.select-control select {
+  min-height: 38px;
+  border: 1px solid #111827;
+  background: #ffffff;
+  color: #111827;
+  padding: 0 12px;
+  border-radius: 0;
+  font: inherit;
+}
+
 .feature-list {
   display: flex;
   flex-wrap: wrap;
@@ -493,6 +524,10 @@ td input[type="checkbox"] {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.compact-table table {
+  min-width: 760px;
 }
 
 table {
@@ -589,6 +624,40 @@ td small {
   gap: 16px;
 }
 
+.error-analysis-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.error-card-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.error-card {
+  border: 1px solid #d7dce2;
+  min-height: 104px;
+  padding: 16px;
+  display: grid;
+  align-content: space-between;
+}
+
+.error-card span,
+.error-card small {
+  color: #4b5563;
+}
+
+.error-card strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.compact-gallery {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .case-card img {
   display: block;
   width: 100%;
@@ -682,6 +751,7 @@ dd {
   .metric-strip,
   .detail-header,
   .analysis-grid,
+  .error-analysis-layout,
   dl {
     grid-template-columns: 1fr;
   }
