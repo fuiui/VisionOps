@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -27,6 +27,8 @@ import {
   Line,
   LineChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis
@@ -84,6 +86,15 @@ function formatSignedValue(value: number | undefined, digits = 3) {
   if (typeof value !== "number") return "0.000";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(digits)}`;
+}
+
+function shortCaseType(caseType: string) {
+  const normalized = caseType.toLowerCase();
+  if (normalized.includes("false negative")) return "FN";
+  if (normalized.includes("false positive")) return "FP";
+  if (normalized.includes("class")) return "CLS";
+  if (normalized.includes("localization")) return "LOC";
+  return "Other";
 }
 
 function StatePanel({
@@ -187,10 +198,43 @@ function Overview({
   state: PageState;
   onImport: () => void;
 }) {
+  const baselineModel = experiments.find((experiment) => experiment.experiment_group.toLowerCase() === "baseline") ?? experiments[0];
+  const bestMapModel = [...experiments].sort((a, b) => b.map50 - a.map50)[0];
+  const bestMap5095Model = [...experiments].sort((a, b) => b.map5095 - a.map5095)[0];
+  const bestFpsModel = [...experiments].sort((a, b) => b.fps - a.fps)[0];
+  const failureCountsByExperiment = failures.reduce<Record<string, number>>((counts, item) => {
+    counts[item.experiment_id] = (counts[item.experiment_id] ?? 0) + 1;
+    return counts;
+  }, {});
+  const lowestFailureModel = [...experiments].sort((a, b) => {
+    const byFailures = (failureCountsByExperiment[a.id] ?? 0) - (failureCountsByExperiment[b.id] ?? 0);
+    return byFailures || b.map50 - a.map50;
+  })[0];
+  const failureBreakdown = failures.reduce<Record<string, number>>((counts, item) => {
+    const key = shortCaseType(item.case_type);
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  const failureBreakdownLabel = Object.entries(failureBreakdown)
+    .map(([key, value]) => `${value} ${key}`)
+    .join(" / ");
+  const recommendedModel = bestMapModel;
+  const mapDelta = bestMapModel && baselineModel ? bestMapModel.map50 - baselineModel.map50 : undefined;
+  const map5095Delta = bestMap5095Model && baselineModel ? bestMap5095Model.map5095 - baselineModel.map5095 : undefined;
+  const fpsDelta = bestFpsModel && bestMapModel ? bestFpsModel.fps - bestMapModel.fps : undefined;
   const chartData = experiments.map((experiment) => ({
     name: experiment.experiment_name.replace("YOLOv8", "v8"),
     map50: experiment.map50,
     map50Label: formatNumber(experiment.map50)
+  }));
+  const tradeoffData = experiments.map((experiment) => ({
+    id: experiment.id,
+    name: experiment.experiment_name,
+    shortName: experiment.experiment_name.replace("YOLOv8", "v8"),
+    fps: experiment.fps,
+    map50: experiment.map50,
+    map50Label: formatNumber(experiment.map50),
+    map5095: experiment.map5095
   }));
 
   return (
@@ -205,24 +249,50 @@ function Overview({
           />
         </div>
       ) : null}
-      <div className="metric-card">
+      <Link className="metric-card metric-link-card" to="/experiments">
         <span>Total experiments</span>
         <strong>{summary?.experiment_count ?? 0}</strong>
-      </div>
-      <div className="metric-card">
+        <small>Open comparison table</small>
+      </Link>
+      <Link className="metric-card metric-link-card" to={bestMapModel ? `/experiment?model=${bestMapModel.id}` : "/experiment"}>
         <span>Best mAP@0.5</span>
-        <strong>{formatNumber(summary?.best_map_model?.map50)}</strong>
-        <small>{summary?.best_map_model?.experiment_name ?? "Import sample data"}</small>
-      </div>
-      <div className="metric-card">
+        <strong>{formatNumber(bestMapModel?.map50 ?? summary?.best_map_model?.map50)}</strong>
+        <small>{formatSignedValue(mapDelta)} vs Baseline</small>
+        <small>{bestMapModel?.experiment_name ?? "Import sample data"}</small>
+      </Link>
+      <Link className="metric-card metric-link-card" to={bestMap5095Model ? `/experiment?model=${bestMap5095Model.id}` : "/experiment"}>
+        <span>Best mAP@0.5:0.95</span>
+        <strong>{formatNumber(bestMap5095Model?.map5095)}</strong>
+        <small>{formatSignedValue(map5095Delta)} vs Baseline</small>
+        <small>{bestMap5095Model?.experiment_name ?? "Import sample data"}</small>
+      </Link>
+      <Link className="metric-card metric-link-card" to={bestFpsModel ? `/experiment?model=${bestFpsModel.id}` : "/experiment"}>
         <span>Best FPS</span>
-        <strong>{formatNumber(summary?.best_fps_model?.fps, 1)}</strong>
-        <small>{summary?.best_fps_model?.experiment_name ?? "Import sample data"}</small>
-      </div>
-      <div className="metric-card">
+        <strong>{formatNumber(bestFpsModel?.fps ?? summary?.best_fps_model?.fps, 1)}</strong>
+        <small>{formatSignedValue(fpsDelta, 1)} FPS vs Accuracy Model</small>
+        <small>{bestFpsModel?.experiment_name ?? "Import sample data"}</small>
+      </Link>
+      <Link className="metric-card metric-link-card" to="/failures">
         <span>Failure cases</span>
         <strong>{summary?.failure_case_count ?? failures.length}</strong>
-      </div>
+        <small>{failureBreakdownLabel || "No failure cases yet"}</small>
+        <small>Lowest: {lowestFailureModel?.experiment_name ?? "Import sample data"}</small>
+      </Link>
+      <Link className="metric-card metric-link-card recommendation-kpi" to={recommendedModel ? `/experiment?model=${recommendedModel.id}` : "/experiment"}>
+        <span>Recommended model</span>
+        <strong>{recommendedModel?.experiment_name ?? "Import sample data"}</strong>
+        <small>Best accuracy candidate</small>
+      </Link>
+      <section className="wide-panel recommendation-panel">
+        <div className="section-heading">
+          <h2>Recommended model: {recommendedModel?.experiment_name ?? "Import sample data"}</h2>
+          <p>
+            {recommendedModel
+              ? `${recommendedModel.experiment_name} is the best accuracy candidate with mAP@0.5 = ${formatNumber(recommendedModel.map50)} and mAP@0.5:0.95 = ${formatNumber(recommendedModel.map5095)}, but it is not the fastest model. Use ${bestFpsModel?.experiment_name ?? "the speed model"} when real-time speed is the main priority.`
+              : "Import sample data to let VisionOps recommend an accuracy-first model and a speed-first fallback."}
+          </p>
+        </div>
+      </section>
       <section className="wide-panel">
         <div className="section-heading">
           <h2>What This MVP Proves</h2>
@@ -232,21 +302,40 @@ function Overview({
           </p>
         </div>
         {experiments.length ? (
-          <div className="chart-frame">
-            <div className="chart-legend" aria-label="Overview chart legend">
-              <span><i className="legend-blue" /> mAP@0.5 detection accuracy</span>
+          <div className="overview-chart-stack">
+            <div className="chart-frame">
+              <div className="section-heading compact-heading">
+                <h2>Accuracy-Speed Tradeoff</h2>
+                <p>Each point is one model run. Higher is more accurate; farther right is faster.</p>
+              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 0 }}>
+                  <CartesianGrid stroke="#d7dce2" />
+                  <XAxis dataKey="fps" name="FPS" type="number" tickLine={false} axisLine={false} unit=" fps" />
+                  <YAxis dataKey="map50" name="mAP@0.5" type="number" tickLine={false} axisLine={false} domain={[0, 1]} />
+                  <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(value, name) => [typeof value === "number" ? formatNumber(value, name === "FPS" ? 1 : 3) : value, name]} />
+                  <Scatter data={tradeoffData} fill="#002FA7" name="Model run">
+                    <LabelList dataKey="shortName" position="top" fontSize={12} />
+                  </Scatter>
+                </ScatterChart>
+              </ResponsiveContainer>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={chartData}>
-                <CartesianGrid stroke="#d7dce2" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} domain={[0, 1]} />
-                <Tooltip />
-                <Bar dataKey="map50" fill="#002FA7" name="mAP@0.5">
-                  <LabelList dataKey="map50Label" position="top" fontSize={12} fill="#002FA7" />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="chart-frame">
+              <div className="chart-legend" aria-label="Overview chart legend">
+                <span><i className="legend-blue" /> mAP@0.5 detection accuracy</span>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={chartData}>
+                  <CartesianGrid stroke="#d7dce2" vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} domain={[0, 1]} />
+                  <Tooltip />
+                  <Bar dataKey="map50" fill="#002FA7" name="mAP@0.5">
+                    <LabelList dataKey="map50Label" position="top" fontSize={12} fill="#002FA7" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         ) : (
           <StatePanel state="empty" title="No chart yet" body="Import sample data to render the first model comparison chart." />
@@ -509,6 +598,8 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
 
 function Experiment({ experiments, state }: { experiments: Experiment[]; state: PageState }) {
   const rows = [...experiments].sort((a, b) => b.map50 - a.map50);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedModelId = searchParams.get("model");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
   const [detailState, setDetailState] = useState<PageState>("empty");
@@ -517,10 +608,11 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
 
   useEffect(() => {
     setSelectedId((current) => {
+      if (requestedModelId && rows.some((experiment) => experiment.id === requestedModelId)) return requestedModelId;
       if (current && rows.some((experiment) => experiment.id === current)) return current;
       return rows[0]?.id ?? null;
     });
-  }, [experiments]);
+  }, [experiments, requestedModelId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -653,7 +745,10 @@ function Experiment({ experiments, state }: { experiments: Experiment[]; state: 
             <button
               className={experiment.id === selected.id ? "active" : ""}
               key={experiment.id}
-              onClick={() => setSelectedId(experiment.id)}
+              onClick={() => {
+                setSelectedId(experiment.id);
+                setSearchParams({ model: experiment.id });
+              }}
               type="button"
             >
               <strong>{experiment.experiment_name}</strong>

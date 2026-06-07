@@ -234,6 +234,36 @@ h2 {
   line-height: 1;
 }
 
+.metric-link-card {
+  color: #111827;
+}
+
+.metric-link-card:hover,
+.metric-link-card:focus-visible {
+  border-color: #002fa7;
+  outline: 0;
+  background: #f7f7f8;
+}
+
+.metric-link-card small {
+  display: block;
+}
+
+.recommendation-kpi strong {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.recommendation-panel {
+  border-color: #111827;
+  background: #f7f7f8;
+}
+
+.recommendation-panel p {
+  max-width: 980px;
+  margin-bottom: 0;
+}
+
 .metric-card-detailed {
   min-height: 172px;
   gap: 8px;
@@ -319,6 +349,15 @@ h2 {
 .chart-frame {
   width: 100%;
   min-height: 280px;
+}
+
+.overview-chart-stack {
+  display: grid;
+  gap: 20px;
+}
+
+.compact-heading h2 {
+  font-size: 20px;
 }
 
 .chart-legend {
