@@ -747,6 +747,7 @@ td small {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .filter-bar label,
@@ -755,6 +756,87 @@ td small {
   gap: 6px;
   color: #4b5563;
   font-weight: 700;
+}
+
+.filter-select {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-label {
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.filter-select-button {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid #111827;
+  background: #ffffff;
+  color: #111827;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-select-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-arrow {
+  color: #111827;
+  transition: transform 140ms ease;
+}
+
+.filter-arrow.open {
+  transform: rotate(180deg);
+}
+
+.filter-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #111827;
+  background: #ffffff;
+  box-shadow: 0 8px 0 rgba(17, 24, 39, 0.08);
+}
+
+.filter-option {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-bottom: 1px solid #d7dce2;
+  background: #ffffff;
+  color: #111827;
+  display: block;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-option:last-child {
+  border-bottom: 0;
+}
+
+.filter-option:hover,
+.filter-option:focus-visible,
+.filter-option.active {
+  background: #f4f7ff;
+  color: #002fa7;
+  outline: 0;
 }
 
 .filter-bar select,

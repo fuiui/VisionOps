@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Database,
   Gauge,
   Images,
@@ -103,6 +104,61 @@ function shortCaseType(caseType: string) {
 
 function formatOptionalNumber(value: number | null | undefined, digits = 2) {
   return typeof value === "number" ? value.toFixed(digits) : "-";
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  options,
+  open,
+  onOpenChange,
+  onChange
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  open: boolean;
+  onOpenChange: (id: string | null) => void;
+  onChange: (value: string) => void;
+}) {
+  const currentLabel = options.find((option) => option.value === value)?.label ?? value;
+
+  return (
+    <div className="filter-select">
+      <span className="filter-label">{label}</span>
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="filter-select-button"
+        onClick={() => onOpenChange(open ? null : id)}
+        type="button"
+      >
+        <span>{currentLabel}</span>
+        <ChevronDown className={open ? "filter-arrow open" : "filter-arrow"} size={18} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="filter-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              aria-selected={option.value === value}
+              className={option.value === value ? "filter-option active" : "filter-option"}
+              key={option.value}
+              onClick={() => {
+                onChange(option.value);
+                onOpenChange(null);
+              }}
+              role="option"
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function StatePanel({
@@ -1091,6 +1147,7 @@ function Failures({ failures, state }: { failures: VisualCase[]; state: PageStat
   const [classFilter, setClassFilter] = useState("all");
   const [sizeFilter, setSizeFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
+  const [openFilter, setOpenFilter] = useState<string | null>(null);
   const [confidenceMin, setConfidenceMin] = useState("");
   const [confidenceMax, setConfidenceMax] = useState("");
   const [iouMin, setIouMin] = useState("");
@@ -1101,6 +1158,11 @@ function Failures({ failures, state }: { failures: VisualCase[]; state: PageStat
   const classes = Array.from(new Set(failures.flatMap((item) => [item.gt_class, item.pred_class]).filter(Boolean))).sort();
   const sizes = Array.from(new Set(failures.map((item) => item.object_size).filter(Boolean))).sort();
   const tags = Array.from(new Set(failures.flatMap((item) => item.scene_tags ?? []))).sort();
+  const modelOptions = [{ value: "all", label: "All models" }, ...models.map((model) => ({ value: model, label: model }))];
+  const typeOptions = [{ value: "all", label: "All types" }, ...errorTypes.map((type) => ({ value: type, label: type }))];
+  const classOptions = [{ value: "all", label: "All classes" }, ...classes.map((className) => ({ value: className, label: className }))];
+  const sizeOptions = [{ value: "all", label: "All sizes" }, ...sizes.map((size) => ({ value: size, label: size }))];
+  const tagOptions = [{ value: "all", label: "All tags" }, ...tags.map((tag) => ({ value: tag, label: tag }))];
   const minConfidence = confidenceMin === "" ? null : Number(confidenceMin);
   const maxConfidence = confidenceMax === "" ? null : Number(confidenceMax);
   const minIou = iouMin === "" ? null : Number(iouMin);
@@ -1216,11 +1278,11 @@ function Failures({ failures, state }: { failures: VisualCase[]; state: PageStat
 
           <section className="wide-panel filter-panel">
             <div className="filter-bar">
-              <label>Model<select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)}><option value="all">All models</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
-              <label>Error Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option>{errorTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-              <label>Class<select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}><option value="all">All classes</option>{classes.map((className) => <option key={className} value={className}>{className}</option>)}</select></label>
-              <label>Object Size<select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}><option value="all">All sizes</option>{sizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
-              <label>Scene Tag<select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}><option value="all">All tags</option>{tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+              <FilterSelect id="model" label="Model" value={modelFilter} options={modelOptions} open={openFilter === "model"} onOpenChange={setOpenFilter} onChange={setModelFilter} />
+              <FilterSelect id="type" label="Error Type" value={typeFilter} options={typeOptions} open={openFilter === "type"} onOpenChange={setOpenFilter} onChange={setTypeFilter} />
+              <FilterSelect id="class" label="Class" value={classFilter} options={classOptions} open={openFilter === "class"} onOpenChange={setOpenFilter} onChange={setClassFilter} />
+              <FilterSelect id="size" label="Object Size" value={sizeFilter} options={sizeOptions} open={openFilter === "size"} onOpenChange={setOpenFilter} onChange={setSizeFilter} />
+              <FilterSelect id="tag" label="Scene Tag" value={tagFilter} options={tagOptions} open={openFilter === "tag"} onOpenChange={setOpenFilter} onChange={setTagFilter} />
               <label>Conf min<input type="number" min="0" max="1" step="0.05" value={confidenceMin} onChange={(event) => setConfidenceMin(event.target.value)} /></label>
               <label>Conf max<input type="number" min="0" max="1" step="0.05" value={confidenceMax} onChange={(event) => setConfidenceMax(event.target.value)} /></label>
               <label>IoU min<input type="number" min="0" max="1" step="0.05" value={iouMin} onChange={(event) => setIouMin(event.target.value)} /></label>
