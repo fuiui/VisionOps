@@ -69,6 +69,21 @@ function metricColor(metric: DynamicMetric) {
   return "#4B5563";
 }
 
+function shortExperimentName(name: string) {
+  return name
+    .replace("YOLOv8s Low-Light Augmentation", "v8s Low-Light")
+    .replace("YOLOv8n Baseline", "v8n Baseline")
+    .replace("YOLOv8n Edge Speed", "v8n Edge")
+    .replace("YOLOv8", "v8");
+}
+
+function metricValueForExperiment(experiment: Experiment, metric: DynamicMetric) {
+  const dynamicValue = experiment.metrics?.find((item) => item.key === metric.key)?.value;
+  if (typeof dynamicValue === "number") return dynamicValue;
+  const fallback = experiment[metric.key as keyof Experiment];
+  return typeof fallback === "number" ? fallback : undefined;
+}
+
 function formatMetricValue(metric: DynamicMetric | undefined) {
   if (!metric) return "not recorded";
   const digits = metric.unit === "ms" || metric.unit === "fps" ? 1 : 3;
@@ -215,7 +230,7 @@ function Shell({
     <div className="app-shell">
       <aside className="sidebar">
         <Link to="/" className="brand">
-          <span className="brand-mark">01</span>
+          <span className="brand-mark">VO</span>
           <span>
             <strong>VisionOps</strong>
             <small>{demoMode ? "Demo Mode MVP loop" : "Real Project Mode"}</small>
@@ -567,11 +582,12 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
               <div className="metric-chart-grid">
                 {metricDefinitions.map((metric) => {
                   const chartRows = chartRowsSource.map((experiment) => {
-                    const value = experiment.metrics?.find((item) => item.key === metric.key);
+                    const value = metricValueForExperiment(experiment, metric);
                     return {
-                      name: experiment.experiment_name.replace("YOLOv8", "v8"),
-                      value: value?.value,
-                      valueLabel: formatMetricValue(value)
+                      name: shortExperimentName(experiment.experiment_name),
+                      fullName: experiment.experiment_name,
+                      value,
+                      valueLabel: typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded"
                     };
                   });
                   const missing = chartRows.filter((item) => item.value === undefined).length;
@@ -582,11 +598,23 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                         <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={chartRows} margin={{ top: 44, right: 14, bottom: 8, left: 0 }}>
+                        <BarChart data={chartRows} margin={{ top: 44, right: 18, bottom: 46, left: 0 }}>
                           <CartesianGrid stroke="#d7dce2" vertical={false} />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} minTickGap={12} />
+                          <XAxis
+                            dataKey="name"
+                            tickLine={false}
+                            axisLine={false}
+                            interval={0}
+                            minTickGap={8}
+                            height={58}
+                            angle={-18}
+                            textAnchor="end"
+                          />
                           <YAxis tickLine={false} axisLine={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.18, 1)]} />
-                          <Tooltip formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")} />
+                          <Tooltip
+                            formatter={(value) => (typeof value === "number" ? formatMetricValue({ ...metric, value }) : "not recorded")}
+                            labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ""}
+                          />
                           <Bar dataKey="value" fill={metricColor(metric)} name={metric.label}>
                             <LabelList dataKey="valueLabel" position="top" fontSize={12} offset={8} />
                           </Bar>
