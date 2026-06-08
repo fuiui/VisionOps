@@ -69,19 +69,61 @@ function metricColor(metric: DynamicMetric) {
   return "#4B5563";
 }
 
-function shortExperimentName(name: string) {
-  return name
-    .replace("YOLOv8s Low-Light Augmentation", "v8s Low-Light")
-    .replace("YOLOv8n Baseline", "v8n Baseline")
-    .replace("YOLOv8n Edge Speed", "v8n Edge")
-    .replace("YOLOv8", "v8");
+function ellipsizeMiddle(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  const marker = "...";
+  const available = Math.max(maxLength - marker.length, 1);
+  const head = Math.ceil(available * 0.6);
+  const tail = Math.floor(available * 0.4);
+  return `${value.slice(0, head)}${marker}${value.slice(value.length - tail)}`;
+}
+
+function compactExperimentToken(token: string) {
+  const normalized = token.trim();
+  const yoloMatch = normalized.match(/^yolo[v-]?(\d+[a-z]?)/i);
+  if (yoloMatch) return `v${yoloMatch[1]}`.toLowerCase();
+
+  const dictionary: Record<string, string> = {
+    augmentation: "Aug",
+    augmented: "Aug",
+    baseline: "Base",
+    rawbaseline: "Raw",
+    lowlight: "LowLight",
+    low: "Low",
+    light: "Light",
+    experiment: "",
+    model: "",
+    checkpoint: "",
+    weights: "",
+    final: "",
+    best: "",
+    run: ""
+  };
+  return dictionary[normalized.toLowerCase()] ?? normalized;
+}
+
+function shortExperimentName(name: string, maxLength = 14) {
+  const tokens = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_/\\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map(compactExperimentToken)
+    .filter(Boolean);
+
+  const modelIndex = tokens.findIndex((token) => /^v\d+[a-z]?$/i.test(token));
+  const relevantTokens = modelIndex >= 0 ? tokens.slice(modelIndex, modelIndex + 3) : tokens.slice(0, 3);
+  const candidate = relevantTokens.length ? relevantTokens.join(" ") : name.trim();
+  return ellipsizeMiddle(candidate, maxLength);
 }
 
 function metricValueForExperiment(experiment: Experiment, metric: DynamicMetric) {
+  const coreValue = experiment[metric.key as keyof Experiment];
+  if (typeof coreValue === "number") return coreValue;
   const dynamicValue = experiment.metrics?.find((item) => item.key === metric.key)?.value;
   if (typeof dynamicValue === "number") return dynamicValue;
-  const fallback = experiment[metric.key as keyof Experiment];
-  return typeof fallback === "number" ? fallback : undefined;
+  return undefined;
 }
 
 function formatMetricValue(metric: DynamicMetric | undefined) {
@@ -598,17 +640,18 @@ function Experiments({ experiments, state }: { experiments: Experiment[]; state:
                         <span>{metric.direction === "lower" ? "lower is better" : "higher is better"}</span>
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={chartRows} margin={{ top: 44, right: 18, bottom: 46, left: 0 }}>
+                        <BarChart data={chartRows} margin={{ top: 44, right: 18, bottom: 30, left: 0 }}>
                           <CartesianGrid stroke="#d7dce2" vertical={false} />
                           <XAxis
                             dataKey="name"
                             tickLine={false}
                             axisLine={false}
                             interval={0}
-                            minTickGap={8}
-                            height={58}
-                            angle={-18}
-                            textAnchor="end"
+                            minTickGap={10}
+                            height={42}
+                            tick={{ fontSize: 12 }}
+                            tickMargin={12}
+                            padding={{ left: 30, right: 30 }}
                           />
                           <YAxis tickLine={false} axisLine={false} domain={[0, (dataMax: number) => Math.max(dataMax * 1.18, 1)]} />
                           <Tooltip
